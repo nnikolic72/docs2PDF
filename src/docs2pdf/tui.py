@@ -1,12 +1,14 @@
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Static, Tree
+from textual.widgets import Button, DataTable, Footer, Header, Input, Static, TextArea, Tree
 
 from docs2pdf.crawler import Crawler
 from docs2pdf.database import DatabaseManager, Page, Project
@@ -21,14 +23,15 @@ class ProjectListScreen(Screen):
         yield Header()
         yield Container(
             DataTable(id="projects_table"),
-            Horizontal(
-                Button("Add Project", variant="success", id="add_btn"),
-                Button("Open/Resume", id="open_btn"),
-                Button("Rename", id="rename_btn"),
-                Button("Reset Project", variant="warning", id="reset_btn"),
-                Button("Archive", variant="error", id="archive_btn"),
-                id="controls",
-            ),
+            classes="main-container",
+        )
+        yield Horizontal(
+            Button("Add Project", variant="success", id="add_btn"),
+            Button("Open/Resume", id="open_btn"),
+            Button("Edit", id="edit_btn"),
+            Button("Reset Project", variant="warning", id="reset_btn"),
+            Button("Archive", variant="error", id="archive_btn"),
+            id="controls",
         )
         yield Footer()
 
@@ -44,7 +47,12 @@ class ProjectListScreen(Screen):
         table.clear()
         projects = db.get_all_projects(include_archived=False)
         for p in projects:
-            table.add_row(str(p.id), p.name, p.root_url, p.status, key=str(p.id))
+            # Handle space-separated URLs
+            urls = p.root_url.split(" ")
+            display_url = urls[0]
+            if len(urls) > 1:
+                display_url += f" (+{len(urls) - 1} more)"
+            table.add_row(str(p.id), p.name, display_url, p.status, key=str(p.id))
 
     @on(Button.Pressed, "#add_btn")
     def action_add_project(self) -> None:
@@ -66,8 +74,8 @@ class ProjectListScreen(Screen):
                 else:
                     self.app.push_screen(PageSelectionScreen(project_id, project.name))
 
-    @on(Button.Pressed, "#rename_btn")
-    def action_rename_project(self) -> None:
+    @on(Button.Pressed, "#edit_btn")
+    def action_edit_project(self) -> None:
         table = self.query_one(DataTable)
         if table.cursor_row is not None:
             project_id_str = table.get_row_at(table.cursor_row)[0]
@@ -76,11 +84,11 @@ class ProjectListScreen(Screen):
             project = db.get_project(project_id)
             if project:
 
-                def handle_rename(new_name: str | None) -> None:
-                    if new_name:
+                def handle_edit(updated_project: Project | None) -> None:
+                    if updated_project:
                         self._refresh_projects()
 
-                self.app.push_screen(RenameProjectScreen(project), callback=handle_rename)
+                self.app.push_screen(EditProjectScreen(project), callback=handle_edit)
 
     @on(Button.Pressed, "#reset_btn")
     def action_reset_project(self) -> None:
@@ -118,8 +126,8 @@ class ProjectListScreen(Screen):
                 self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
 
 
-class RenameProjectScreen(Screen[str]):
-    """Screen for renaming an existing documentation project."""
+class EditProjectScreen(Screen[Project]):
+    """Screen for editing an existing documentation project."""
 
     def __init__(self, project: Project):
         super().__init__()
@@ -127,19 +135,28 @@ class RenameProjectScreen(Screen[str]):
 
     def compose(self) -> ComposeResult:
         yield Container(
-            Static(f"Rename Project: {self.project.name}", id="title"),
-            Input(value=self.project.name, placeholder="New Project Name", id="new_project_name"),
-            Horizontal(
-                Button("Save", variant="success", id="save_btn"),
-                Button("Cancel", id="cancel_btn"),
+            Container(
+                Static(f"Edit Project: {self.project.name}", id="title"),
+                Static("Project Name:", classes="label"),
+                Input(value=self.project.name, placeholder="Project Name", id="project_name"),
+                Static("Exclude patterns (comma-separated):", classes="label"),
+                Input(value=self.project.exclude_patterns, placeholder="Exclude patterns", id="exclude_patterns"),
+                id="form",
             ),
-            id="form",
+            classes="main-container centered-content",
+        )
+        yield Horizontal(
+            Button("Save", variant="success", id="save_btn"),
+            Button("Cancel", id="cancel_btn"),
+            classes="button-bar",
         )
 
     @on(Button.Pressed, "#save_btn")
-    def save_rename(self) -> None:
-        new_name = self.query_one("#new_project_name", Input).value
+    def save_changes(self) -> None:
+        new_name = self.query_one("#project_name", Input).value
+        new_exclude = self.query_one("#exclude_patterns", Input).value
 
+        updates: dict[str, Any] = {}
         if new_name and new_name != self.project.name:
             # 1. Rename directory if it exists
             old_dir = Path("projects") / self.project.name
@@ -151,11 +168,18 @@ class RenameProjectScreen(Screen[str]):
                 except Exception as e:
                     # In a real app we might want to show an error message
                     print(f"Error renaming directory: {e}")
+            updates["name"] = new_name
 
-            # 2. Update database
+        if new_exclude != self.project.exclude_patterns:
+            updates["exclude_patterns"] = new_exclude
+
+        if updates:
             db = self.app.db  # type: ignore
-            db.update_project(self.project.id, {"name": new_name})
-            self.dismiss(new_name)
+            db.update_project(self.project.id, updates)
+            # Return updated project
+            self.project.name = new_name
+            self.project.exclude_patterns = new_exclude
+            self.dismiss(self.project)
         else:
             self.dismiss(None)
 
@@ -169,26 +193,48 @@ class AddProjectScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Container(
-            Static("New Project Details", id="title"),
-            Input(placeholder="Project Name", id="project_name"),
-            Input(placeholder="Root URL (e.g., https://example.com/docs/)", id="root_url"),
-            Horizontal(
-                Button("Save", variant="success", id="save_btn"),
-                Button("Cancel", id="cancel_btn"),
+            Container(
+                Static("New Project Details", id="title"),
+                Input(placeholder="Project Name", id="project_name"),
+                Static("Root URLs (pasted text will be parsed):", classes="label"),
+                TextArea(id="root_urls"),
+                Input(placeholder="Exclude patterns (comma-separated, e.g., /api/,/v1/)", id="exclude_patterns"),
+                id="form",
             ),
-            id="form",
+            classes="main-container centered-content",
+        )
+        yield Horizontal(
+            Button("Save", variant="success", id="save_btn"),
+            Button("Cancel", id="cancel_btn"),
+            classes="button-bar",
         )
 
     @on(Button.Pressed, "#save_btn")
     def save_project(self) -> None:
         name = self.query_one("#project_name", Input).value
-        url = self.query_one("#root_url", Input).value
+        text = self.query_one("#root_urls", TextArea).text
+        exclude_patterns = self.query_one("#exclude_patterns", Input).value
 
-        if name and url:
+        # Extract all URLs from pasted text
+        found_urls = re.findall(r"https?://[^\s]+", text)
+
+        # Deduplicate while preserving order
+        seen = set()
+        ordered_urls = []
+        for u in found_urls:
+            # Basic cleanup: remove trailing punctuation that might be part of the text but not the URL
+            u = u.rstrip(".,;!?)")
+            if u not in seen:
+                ordered_urls.append(u)
+                seen.add(u)
+
+        if name and ordered_urls:
+            # Store as a space-separated string in the DB
+            urls_str = " ".join(ordered_urls)
             db = self.app.db  # type: ignore
-            project_id = db.add_project(Project(name=name, root_url=url))
+            project_id = db.add_project(Project(name=name, root_url=urls_str, exclude_patterns=exclude_patterns))
             self.app.pop_screen()
-            self.app.call_after_refresh(self._start_discovery, project_id, url, name)
+            self.app.call_after_refresh(self._start_discovery, project_id, urls_str, name)
 
     def _start_discovery(self, project_id: int, url: str, name: str) -> None:
         self.app.push_screen(DiscoveryScreen(project_id, url, name))
@@ -210,6 +256,8 @@ class DiscoveryScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Container(
             Static(f"Discovering hierarchy for {self.project_name}..."),
+            Static("Initializing...", id="current_url"),
+            DownloadProgress(id="discovery_progress"),
             Static("This might take a minute depending on the site size.", id="status"),
             id="discovery_container",
         )
@@ -219,8 +267,22 @@ class DiscoveryScreen(Screen):
 
     @work(exclusive=True)
     async def run_discovery(self) -> None:
-        crawler = Crawler(self.root_url, self.project_name)
-        pages_info = await crawler.discover_hierarchy(max_depth=6)
+        progress = self.query_one("#discovery_progress", DownloadProgress)
+        current_url_label = self.query_one("#current_url", Static)
+
+        def on_progress(url: str, status: str):
+            progress.update_status(url, status)
+            if status == "downloading":
+                current_url_label.update(f"Fetching: [bold]{url}[/bold]")
+
+        db = self.app.db  # type: ignore
+        project = db.get_project(self.project_id)
+        exclude_patterns = (
+            [p.strip() for p in project.exclude_patterns.split(",")] if project and project.exclude_patterns else []
+        )
+
+        crawler = Crawler(self.root_url, self.project_name, exclude_patterns=exclude_patterns)
+        pages_info = await crawler.discover_hierarchy(max_depth=6, on_progress=on_progress)
 
         # Save to DB
         db = self.app.db  # type: ignore
@@ -232,16 +294,11 @@ class DiscoveryScreen(Screen):
             url_to_db_id[info["url"]] = db_id
 
         # Second pass: update parent IDs
-        # We need to add an update_page_parent method to db if we want to do it in two passes
-        # or just be more clever in first pass.
-        # Let's add a generic update_page method to database.py in next turn or fix it here.
-        # For now, let's assume we can update it.
         for info in pages_info:
             if info["parent_url"] and info["parent_url"] in url_to_db_id:
                 # Update the page in DB with parent_id
                 page_id = url_to_db_id[info["url"]]
                 parent_id = url_to_db_id[info["parent_url"]]
-                # We'll need to implement this method in database.py
                 db.update_page(page_id, {"parent_id": parent_id})
 
         self.app.pop_screen()
@@ -261,10 +318,12 @@ class PageSelectionScreen(Screen):
         yield Container(
             Static(f"Select pages for {self.project_name}", id="title"),
             CheckboxTree("Documentation", id="page_tree"),
-            Horizontal(
-                Button("Download Selected", variant="success", id="download_btn"),
-                Button("Back", id="back_btn"),
-            ),
+            classes="main-container",
+        )
+        yield Horizontal(
+            Button("Download Selected", variant="success", id="download_btn"),
+            Button("Back", id="back_btn"),
+            classes="button-bar",
         )
         yield Footer()
 
@@ -325,9 +384,14 @@ class CrawlerProgressScreen(Screen):
         yield Header()
         yield Container(
             Static(f"Downloading {self.project_name} in background..."),
+            Static("Initializing...", id="current_url"),
             DownloadProgress(id="download_progress"),
-            Static("Initializing...", id="progress_log"),
+            Static("Preparing...", id="progress_log"),
+            id="crawler_container",
+        )
+        yield Horizontal(
             Button("Stop", variant="error", id="stop_btn"),
+            classes="button-bar",
         )
         yield Footer()
 
@@ -343,14 +407,19 @@ class CrawlerProgressScreen(Screen):
 
         log = self.query_one("#progress_log", Static)
         progress = self.query_one("#download_progress", DownloadProgress)
+        current_url_label = self.query_one("#current_url", Static)
         log.update("Starting crawler...")
 
         def on_progress(url: str, status: str):
-            self.app.call_from_thread(progress.update_status, url, status)
+            progress.update_status(url, status)
+            if status == "downloading":
+                current_url_label.update(f"Fetching: [bold]{url}[/bold]")
 
-        crawler = Crawler(project.root_url, project.name)
+        exclude_patterns = [p.strip() for p in project.exclude_patterns.split(",")] if project.exclude_patterns else []
+        crawler = Crawler(project.root_url, project.name, exclude_patterns=exclude_patterns)
         await crawler.run(selected_urls=selected_urls, on_progress=on_progress)
 
+        current_url_label.update("Done.")
         log.update("Crawling complete. Generating PDF...")
         generator = PDFGenerator(project.name, project.root_url)
         pdf_path = generator.generate([p for p in pages if p.is_selected])
@@ -378,10 +447,69 @@ class Docs2PDFApp(App):
         height: auto;
         border: thick $primary;
         align: center middle;
+        padding: 1 2;
     }
-    #controls {
-        height: 3;
+    TextArea {
+        height: 10;
         margin-top: 1;
+        margin-bottom: 1;
+    }
+    .label {
+        margin-top: 1;
+        color: $text-muted;
+    }
+    #controls, .button-bar {
+        height: auto;
+        min-height: 3;
+        margin-top: 1;
+        align: center middle;
+        width: 100%;
+    }
+    .main-container {
+        height: 1fr;
+    }
+    .centered-content {
+        align: center middle;
+    }
+    DataTable, CheckboxTree {
+        height: 1fr;
+    }
+    #discovery_container, #crawler_container {
+        height: 1fr;
+    }
+
+    /* Pastel Button Styling */
+    Button {
+        margin-right: 1;
+        border: none;
+        text-style: bold;
+    }
+    Button:hover {
+        text-style: bold underline;
+    }
+
+    /* Pastel Green: Add, Save, Download */
+    #add_btn, #save_btn, #download_btn {
+        background: #B4E197;
+        color: #2C3333;
+    }
+
+    /* Pastel Blue: Open, Edit, Back */
+    #open_btn, #edit_btn, #back_btn {
+        background: #A0C4FF;
+        color: #2C3333;
+    }
+
+    /* Pastel Red/Pink: Archive, Stop, Cancel */
+    #archive_btn, #stop_btn, #cancel_btn {
+        background: #FFADAD;
+        color: #2C3333;
+    }
+
+    /* Pastel Yellow: Reset */
+    #reset_btn {
+        background: #FDFFB6;
+        color: #2C3333;
     }
     """
 

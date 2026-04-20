@@ -129,3 +129,19 @@ async def test_crawl_respects_hierarchy(respx_mock):
     assert "https://example.com/docs/page1/" in discovered_urls
     assert "https://example.com/docs/page2/" in discovered_urls
     assert "https://example.com/other/" not in discovered_urls
+
+
+def test_crawler_respects_exclude_patterns():
+    """Test that the crawler filters out URLs matching exclude patterns."""
+    root_url = "https://example.com/docs/"
+    exclude_patterns = ["/api/", "internal", "rules"]
+    crawler = Crawler(root_url, "test_project", exclude_patterns=exclude_patterns)
+
+    # Valid URLs
+    assert crawler._is_valid_url("https://example.com/docs/intro") is True
+    assert crawler._is_valid_url("https://example.com/docs/chapter1") is True
+
+    # URLs matching exclude patterns
+    assert crawler._is_valid_url("https://example.com/docs/api/v1") is False
+    assert crawler._is_valid_url("https://example.com/docs/internal-page") is False
+    assert crawler._is_valid_url("https://example.com/docs/page/rules/2") is False

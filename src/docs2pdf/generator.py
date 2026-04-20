@@ -104,6 +104,16 @@ class PDFGenerator:
     </style>
 </head>
 <body>
+    <div class="section" id="table-of-contents">
+        <h1>Table of Contents</h1>
+        <ul>
+            {% for page in pages %}
+                {% if not page.breadcrumbs %}
+                <li><a href="#{{ page.anchor }}">{{ page.title }}</a></li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
     {% for page in pages %}
     <div class="section" id="{{ page.anchor }}">
         <div class="breadcrumbs">

@@ -65,6 +65,7 @@ def test_update_project(db_manager: DatabaseManager):
     db_manager.update_project(project_id, {"name": "New Name", "status": "completed"})
 
     updated = db_manager.get_project(project_id)
+    assert updated is not None
     assert updated.name == "New Name"
     assert updated.status == "completed"
 
@@ -76,4 +77,5 @@ def test_archive_project(db_manager: DatabaseManager):
     db_manager.archive_project(project_id)
 
     project = db_manager.get_project(project_id)
+    assert project is not None
     assert project.is_archived is True

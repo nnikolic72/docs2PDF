@@ -18,14 +18,27 @@ class Crawler:
     Respects hierarchy and domain boundaries.
     """
 
-    def __init__(self, root_url: str, project_name: str, base_dir: Path = Path("projects")):
-        self.root_url = root_url.split("#")[0].rstrip("/")
-        if not self.root_url.split("/")[-1].count("."):
-            self.root_url += "/"
+    def __init__(
+        self,
+        root_url: str,
+        project_name: str,
+        base_dir: Path = Path("projects"),
+        exclude_patterns: list[str] | None = None,
+    ):
+        # Parse multiple URLs
+        raw_urls = root_url.split(" ")
+        self.root_urls = []
+        for u in raw_urls:
+            clean_u = u.split("#")[0].rstrip("/")
+            if not clean_u.split("/")[-1].count("."):
+                clean_u += "/"
+            self.root_urls.append(clean_u)
 
+        self.root_url = self.root_urls[0]  # Use first URL for domain logic
         self.project_name = project_name
         self.project_dir = base_dir / project_name
         self.visited_urls: set[str] = set()
+        self.exclude_patterns = exclude_patterns or []
         parsed_root = urlparse(self.root_url)
         self.root_domain = parsed_root.netloc
 
@@ -49,8 +62,18 @@ class Crawler:
 
     def _is_valid_url(self, url: str) -> bool:
         """
-        Check if the URL is within the same domain and at the same or deeper hierarchy.
+        Check if the URL is within the same domain, at the same or deeper hierarchy,
+        and does not match any exclude patterns.
         """
+        # Explicitly pasted URLs are always valid
+        if url in self.root_urls:
+            return True
+
+        # Check exclude patterns first
+        for pattern in self.exclude_patterns:
+            if pattern and pattern in url:
+                return False
+
         parsed = urlparse(url)
 
         # Check domain
@@ -114,7 +137,10 @@ class Crawler:
         return links
 
     async def discover_hierarchy(
-        self, max_depth: int = 6, client: httpx.AsyncClient | None = None
+        self,
+        max_depth: int = 6,
+        client: httpx.AsyncClient | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Build a hierarchical tree of discovered pages.
@@ -122,10 +148,12 @@ class Crawler:
         """
         if client is None:
             async with httpx.AsyncClient(follow_redirects=True, headers=self.headers) as local_client:
-                return await self.discover_hierarchy(max_depth=max_depth, client=local_client)
+                return await self.discover_hierarchy(max_depth=max_depth, client=local_client, on_progress=on_progress)
 
         discovered_pages: dict[str, dict[str, Any]] = {}
-        queue: list[dict[str, Any]] = [{"url": self._clean_url(self.root_url), "parent_url": None, "depth": 0}]
+        queue: list[dict[str, Any]] = [
+            {"url": self._clean_url(u), "parent_url": None, "depth": 0} for u in self.root_urls
+        ]
 
         while queue:
             current = queue.pop(0)
@@ -135,9 +163,17 @@ class Crawler:
             if url in discovered_pages or depth > max_depth:
                 continue
 
+            if on_progress:
+                on_progress(url, "downloading")
+
             html = await self._fetch_page(url, client=client)
             if not html:
+                if on_progress:
+                    on_progress(url, "error")
                 continue
+
+            if on_progress:
+                on_progress(url, "done")
 
             title = self._extract_title(html)
             discovered_pages[url] = {
@@ -229,7 +265,7 @@ class Crawler:
                 await asyncio.sleep(0.05)  # Be polite
         else:
             # Fallback to full recursive crawl
-            queue: list[dict[str, Any]] = [{"url": self._clean_url(self.root_url), "depth": 0}]
+            queue: list[dict[str, Any]] = [{"url": self._clean_url(u), "depth": 0} for u in self.root_urls]
             while queue:
                 current = queue.pop(0)
                 current_url = current["url"]

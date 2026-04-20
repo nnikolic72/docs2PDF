@@ -47,10 +47,12 @@ def test_update_page_selection(db_manager: DatabaseManager):
 
     db_manager.update_page_selection(page_id, False)
     page = db_manager.get_page(page_id)
+    assert page is not None
     assert page.is_selected is False
 
     db_manager.update_page_selection(page_id, True)
     page = db_manager.get_page(page_id)
+    assert page is not None
     assert page.is_selected is True
 
 
@@ -63,9 +65,16 @@ def test_update_page_selection_recursive(db_manager: DatabaseManager):
     # Deselect parent recursively
     db_manager.update_page_selection(p_id, False, recursive=True)
 
-    assert db_manager.get_page(p_id).is_selected is False
-    assert db_manager.get_page(c_id).is_selected is False
-    assert db_manager.get_page(gc_id).is_selected is False
+    p_page = db_manager.get_page(p_id)
+    c_page = db_manager.get_page(c_id)
+    gc_page = db_manager.get_page(gc_id)
+
+    assert p_page is not None
+    assert p_page.is_selected is False
+    assert c_page is not None
+    assert c_page.is_selected is False
+    assert gc_page is not None
+    assert gc_page.is_selected is False
 
 
 def test_delete_project_pages(db_manager: DatabaseManager):

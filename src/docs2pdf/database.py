@@ -10,6 +10,7 @@ class ProjectUpdate(TypedDict):
 
     name: NotRequired[str]
     root_url: NotRequired[str]
+    exclude_patterns: NotRequired[str]
     status: NotRequired[str]
     is_archived: NotRequired[bool]
 
@@ -31,6 +32,7 @@ class Project:
     name: str
     root_url: str
     id: int | None = None
+    exclude_patterns: str = ""
     status: str = "pending"
     is_archived: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -64,19 +66,26 @@ class DatabaseManager:
         return conn
 
     def initialize(self) -> None:
-        """Create the tables if they don't exist."""
+        """Create the tables if they don't exist and run migrations."""
         with self._get_connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS projects (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     root_url TEXT NOT NULL,
+                    exclude_patterns TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'pending',
                     is_archived BOOLEAN NOT NULL DEFAULT 0,
                     created_at TIMESTAMP NOT NULL,
                     updated_at TIMESTAMP NOT NULL
                 )
             """)
+            # Migration: Add exclude_patterns column if it doesn't exist
+            cursor = conn.execute("PRAGMA table_info(projects)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "exclude_patterns" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN exclude_patterns TEXT NOT NULL DEFAULT ''")
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS pages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,12 +106,13 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO projects (name, root_url, status, is_archived, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (name, root_url, exclude_patterns, status, is_archived, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project.name,
                     project.root_url,
+                    project.exclude_patterns,
                     project.status,
                     1 if project.is_archived else 0,
                     project.created_at.isoformat(),
@@ -237,6 +247,7 @@ class DatabaseManager:
             id=row["id"],
             name=row["name"],
             root_url=row["root_url"],
+            exclude_patterns=row["exclude_patterns"],
             status=row["status"],
             is_archived=bool(row["is_archived"]),
             created_at=datetime.fromisoformat(row["created_at"]),
