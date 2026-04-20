@@ -7,56 +7,60 @@ from docs2pdf.crawler import Crawler
 @pytest.mark.asyncio
 async def test_crawler_uses_provided_session(tmp_path):
     """Test that the crawler reuses a provided httpx.AsyncClient."""
-    import httpx
     from unittest.mock import AsyncMock, MagicMock
-    
+
+    import httpx
+
     root_url = "https://example.com/docs/"
     # We use base_dir instead of project_dir as that is what Crawler expects
     crawler = Crawler(root_url, "test_project", base_dir=tmp_path)
-    
+
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = "<html><body><h1>Test</h1><p>Content</p></body></html>"
-    
+
     # Mock the client
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.get.return_value = mock_response
-    
+
     # Run crawl with the mock client
-    import trafilatura
     from unittest.mock import patch
+
     with patch("trafilatura.extract", return_value="<content>Test</content>"):
         await crawler.crawl_page(root_url, client=mock_client)
-    
+
     # Check if file was created
-    filename = "docs.xml" # /docs/ becomes docs.xml
+    filename = "docs.xml"  # /docs/ becomes docs.xml
     content_file = tmp_path / "test_project" / "content" / filename
     assert content_file.exists()
+
 
 @pytest.mark.asyncio
 async def test_crawler_caches_pages(tmp_path):
     """Test that the crawler caches fetched pages."""
-    import httpx
     from unittest.mock import AsyncMock, MagicMock
-    
+
+    import httpx
+
     root_url = "https://example.com/docs/"
     crawler = Crawler(root_url, "test_project", base_dir=tmp_path)
-    
+
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = "<html><body><h1>Test</h1></body></html>"
-    
+
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.get.return_value = mock_response
-    
+
     # First fetch
     await crawler._fetch_page(root_url, client=mock_client)
     assert mock_client.get.call_count == 1
-    
+
     # Second fetch should use cache
     await crawler._fetch_page(root_url, client=mock_client)
     assert mock_client.get.call_count == 1
     assert crawler._page_cache[root_url] == mock_response.text
+
 
 def test_is_valid_url():
     """Test that the crawler correctly filters URLs based on domain and hierarchy."""
@@ -80,12 +84,13 @@ def test_is_valid_url():
     # Fragment/Query handling (should be normalized or ignored for crawling logic)
     assert crawler._is_valid_url("https://example.com/docs/intro#section") is True
 
+
 @pytest.mark.asyncio
 async def test_crawl_extracts_links(respx_mock):
     """Test that the crawler correctly extracts links from a page."""
     root_url = "https://example.com/docs/"
     crawler = Crawler(root_url, "test_project")
-    
+
     html = f"""
     <html>
         <body>
@@ -99,9 +104,10 @@ async def test_crawl_extracts_links(respx_mock):
     respx_mock.get(root_url).mock(return_value=httpx.Response(200, content=html))
 
     links = await crawler._get_links_with_info(root_url)
-    discovered_urls = [l["url"] for l in links]
+    discovered_urls = [link["url"] for link in links]
     assert f"{root_url}subpage/" in discovered_urls
     assert f"{root_url}relative/" in discovered_urls
+
 
 @pytest.mark.asyncio
 async def test_crawl_respects_hierarchy(respx_mock):

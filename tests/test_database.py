@@ -11,12 +11,14 @@ def db_path(tmp_path: Path) -> Path:
     """Fixture to provide a temporary database path."""
     return tmp_path / "test_docs2pdf.db"
 
+
 @pytest.fixture
 def db_manager(db_path: Path) -> DatabaseManager:
     """Fixture to provide a DatabaseManager instance."""
     manager = DatabaseManager(db_path)
     manager.initialize()
     return manager
+
 
 def test_initialize_creates_table(db_path: Path):
     """Test that initialize creates the projects table."""
@@ -26,6 +28,7 @@ def test_initialize_creates_table(db_path: Path):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'")
         assert cursor.fetchone() is not None
+
 
 def test_add_project(db_manager: DatabaseManager):
     """Test adding a new project."""
@@ -41,6 +44,7 @@ def test_add_project(db_manager: DatabaseManager):
     assert saved_project.status == "pending"
     assert saved_project.is_archived is False
 
+
 def test_get_all_projects(db_manager: DatabaseManager):
     """Test retrieving all non-archived projects."""
     db_manager.add_project(Project(name="P1", root_url="url1"))
@@ -53,6 +57,7 @@ def test_get_all_projects(db_manager: DatabaseManager):
     all_projects = db_manager.get_all_projects(include_archived=True)
     assert len(all_projects) == 2
 
+
 def test_update_project(db_manager: DatabaseManager):
     """Test updating project details."""
     project_id = db_manager.add_project(Project(name="Old Name", root_url="old_url"))
@@ -62,6 +67,7 @@ def test_update_project(db_manager: DatabaseManager):
     updated = db_manager.get_project(project_id)
     assert updated.name == "New Name"
     assert updated.status == "completed"
+
 
 def test_archive_project(db_manager: DatabaseManager):
     """Test archiving a project."""

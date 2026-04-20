@@ -1,11 +1,12 @@
-from typing import TypeVar
+from typing import Any, TypeVar, cast
+
+from rich.text import Text
+from textual.style import Style
 from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
-from textual.style import Style
-from rich.text import Text
-from typing import TypeVar, Any, cast
 
 T = TypeVar("T")
+
 
 class CheckboxTree(Tree[Any]):
     """
@@ -13,7 +14,7 @@ class CheckboxTree(Tree[Any]):
     Data associated with nodes must be dict-like or have an 'is_selected' attribute.
     """
 
-    def render_label(self, node: TreeNode[Any], base_style: Style, style: Style) -> Text: # type: ignore[override]
+    def render_label(self, node: TreeNode[Any], base_style: Style, style: Style) -> Text:  # type: ignore[override]
         # Use data to store the 'selected' state
         data = node.data
         is_selected = False
@@ -47,8 +48,7 @@ class CheckboxTree(Tree[Any]):
         if isinstance(data, dict):
             cast(dict[Any, Any], data)["is_selected"] = state
         elif data is not None:
-            setattr(data, "is_selected", state)
+            cast(Any, data).is_selected = state
 
         for child in node.children:
             self._recursive_set(child, state)
-

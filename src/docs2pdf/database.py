@@ -2,27 +2,32 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NotRequired, TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 
 class ProjectUpdate(TypedDict):
     """Fields that can be updated for a project."""
+
     name: NotRequired[str]
     root_url: NotRequired[str]
     status: NotRequired[str]
     is_archived: NotRequired[bool]
 
+
 class PageUpdate(TypedDict):
     """Fields that can be updated for a page."""
+
     project_id: NotRequired[int]
     url: NotRequired[str]
     title: NotRequired[str]
     parent_id: NotRequired[int | None]
     is_selected: NotRequired[bool]
 
+
 @dataclass
 class Project:
     """Project data model."""
+
     name: str
     root_url: str
     id: int | None = None
@@ -31,9 +36,11 @@ class Project:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
+
 @dataclass
 class Page:
     """Page data model for documentation hierarchy selection."""
+
     project_id: int
     url: str
     title: str
@@ -42,6 +49,7 @@ class Page:
     is_selected: bool = True
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
 
 class DatabaseManager:
     """Manager for the SQLite database."""
@@ -201,7 +209,8 @@ class DatabaseManager:
         with self._get_connection() as conn:
             if recursive:
                 # Use a recursive CTE to find all children and grandchildren
-                conn.execute("""
+                conn.execute(
+                    """
                     WITH RECURSIVE children AS (
                         SELECT id FROM pages WHERE id = ?
                         UNION ALL
@@ -210,11 +219,12 @@ class DatabaseManager:
                     )
                     UPDATE pages SET is_selected = ?, updated_at = ?
                     WHERE id IN (SELECT id FROM children)
-                """, (page_id, status, updated_at))
+                """,
+                    (page_id, status, updated_at),
+                )
             else:
                 conn.execute(
-                    "UPDATE pages SET is_selected = ?, updated_at = ? WHERE id = ?",
-                    (status, updated_at, page_id)
+                    "UPDATE pages SET is_selected = ?, updated_at = ? WHERE id = ?", (status, updated_at, page_id)
                 )
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:

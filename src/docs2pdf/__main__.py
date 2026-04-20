@@ -8,5 +8,6 @@ def main():
     app = Docs2PDFApp(db_path)
     app.run()
 
+
 if __name__ == "__main__":
     main()

@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+
 class Crawler:
     """
     Asynchronous crawler for documentation websites.
@@ -23,7 +24,7 @@ class Crawler:
         self.visited_urls: set[str] = set()
         self.root_domain = urlparse(root_url).netloc
         self.root_path = urlparse(self.root_url).path
-        self._page_cache: dict[str, str] = {} # url -> html content
+        self._page_cache: dict[str, str] = {}  # url -> html content
 
         # Ensure project directory exists
         self.project_dir.mkdir(parents=True, exist_ok=True)
@@ -86,13 +87,12 @@ class Crawler:
             absolute_url = urljoin(url, a["href"])
             clean_url = absolute_url.split("#")[0].rstrip("/") + "/"
             if self._is_valid_url(clean_url):
-                links.append({
-                    "url": clean_url,
-                    "title": a.get_text().strip() or "No Title"
-                })
+                links.append({"url": clean_url, "title": a.get_text().strip() or "No Title"})
         return links
 
-    async def discover_hierarchy(self, max_depth: int = 5, client: httpx.AsyncClient | None = None) -> list[dict[str, Any]]:
+    async def discover_hierarchy(
+        self, max_depth: int = 5, client: httpx.AsyncClient | None = None
+    ) -> list[dict[str, Any]]:
         """
         Build a hierarchical tree of discovered pages.
         Returns a flat list of dicts with parent_url references for easy tree building in TUI.
@@ -130,24 +130,15 @@ class Crawler:
                 clean_url = absolute_url.split("#")[0].rstrip("/") + "/"
 
                 if self._is_valid_url(clean_url) and clean_url not in discovered_pages:
-                    queue.append({
-                        "url": clean_url,
-                        "parent_url": url,
-                        "depth": depth + 1
-                    })
+                    queue.append({"url": clean_url, "parent_url": url, "depth": depth + 1})
 
-            await asyncio.sleep(0.05) # Be polite
+            await asyncio.sleep(0.05)  # Be polite
 
         return list(discovered_pages.values())
 
     def _extract_content(self, html: str) -> str | None:
         """Extract clean content from HTML using trafilatura."""
-        return trafilatura.extract(
-            html,
-            include_images=True,
-            include_links=True,
-            output_format="xml"
-        )
+        return trafilatura.extract(html, include_images=True, include_links=True, output_format="xml")
 
     async def crawl_page(self, url: str, client: httpx.AsyncClient | None = None) -> None:
         """Download and save a single page's clean content."""
@@ -156,7 +147,7 @@ class Crawler:
 
         filename = urlparse(url).path.strip("/").replace("/", "_") or "index"
         filepath = self.project_dir / "content" / f"{filename}.xml"
-        
+
         if filepath.exists():
             self.visited_urls.add(url)
             return

@@ -26,7 +26,8 @@ try:
 except (ImportError, OSError) as e:
     logger.error(f"WeasyPrint system libraries (Pango, Cairo) not found: {e}")
     logger.error("PDF generation will fail. Please install with: brew install weasyprint")
-    HTML = MagicMock() # type: ignore
+    HTML = MagicMock()  # type: ignore
+
 
 class PDFGenerator:
     """
@@ -38,7 +39,7 @@ class PDFGenerator:
         self.project_name = project_name
         self.root_url = root_url
         self.root_path = urlparse(root_url).path.rstrip("/")
-        
+
         # Ensure base_dir is a Path
         if base_dir is None:
             self.project_dir = Path("projects") / project_name
@@ -46,7 +47,7 @@ class PDFGenerator:
             self.project_dir = Path(base_dir) / project_name
         else:
             self.project_dir = base_dir / project_name
-            
+
         self.content_dir = self.project_dir / "content"
         self.url_to_id: dict[str, str] = {}
 
@@ -60,7 +61,8 @@ class PDFGenerator:
         """Create the default PDF template with reMarkable Pro dimensions."""
         template_path = Path(__file__).parent / "templates" / "base.html"
         if not template_path.exists():
-            template_path.write_text("""
+            template_path.write_text(
+                """
 <!DOCTYPE html>
 <html>
 <head>
@@ -118,14 +120,16 @@ class PDFGenerator:
     {% endfor %}
 </body>
 </html>
-            """, encoding="utf-8")
+            """,
+                encoding="utf-8",
+            )
 
     def _slugify_url(self, url: str) -> str:
         """Create a unique anchor ID from a URL."""
         parsed = urlparse(url)
         path = parsed.path.rstrip("/")
         if path.startswith(self.root_path):
-            path = path[len(self.root_path):].lstrip("/")
+            path = path[len(self.root_path) :].lstrip("/")
 
         if not path:
             return "root"
@@ -147,10 +151,7 @@ class PDFGenerator:
         while current and current.parent_id:
             parent = pages_by_id.get(current.parent_id)
             if parent:
-                crumbs.insert(0, {
-                    "title": parent.title,
-                    "anchor": self._slugify_url(parent.url)
-                })
+                crumbs.insert(0, {"title": parent.title, "anchor": self._slugify_url(parent.url)})
                 current = parent
             else:
                 break
@@ -178,12 +179,14 @@ class PDFGenerator:
 
             rewritten_content = self._rewrite_links(raw_content)
 
-            render_data.append({
-                "title": page.title,
-                "anchor": self._slugify_url(page.url),
-                "breadcrumbs": self._get_breadcrumbs(page, pages_by_id),
-                "content": rewritten_content
-            })
+            render_data.append(
+                {
+                    "title": page.title,
+                    "anchor": self._slugify_url(page.url),
+                    "breadcrumbs": self._get_breadcrumbs(page, pages_by_id),
+                    "content": rewritten_content,
+                }
+            )
 
         # Render HTML
         template = self.env.get_template("base.html")

@@ -10,6 +10,7 @@ def tmp_projects_dir(tmp_path: Path) -> Path:
     projects_dir.mkdir()
     return projects_dir
 
+
 @pytest.fixture
 def sample_html_content() -> str:
     """Fixture to provide sample HTML content."""

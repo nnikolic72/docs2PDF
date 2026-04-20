@@ -18,6 +18,7 @@ from docs2pdf.generator import PDFGenerator
 def generator(tmp_path: Path):
     return PDFGenerator(project_name="test_project", base_dir=tmp_path)
 
+
 def test_slugify_url():
     """Test generating a unique anchor ID from a URL."""
     generator = PDFGenerator("test", root_url="https://example.com/docs/", base_dir=Path("."))
@@ -27,6 +28,7 @@ def test_slugify_url():
 
     # Root URL
     assert generator._slugify_url("https://example.com/docs/") == "root"
+
 
 def test_rewrite_links():
     """Test rewriting HTML links to internal PDF anchors."""
@@ -43,6 +45,7 @@ def test_rewrite_links():
     assert '<a href="#get-started">Link</a>' in rewritten
     assert '<a href="https://google.com">External</a>' in rewritten
 
+
 def test_get_breadcrumbs():
     """Test generating a breadcrumb list for a page."""
     gen = PDFGenerator("test", root_url="url/", base_dir=Path("."))
@@ -56,7 +59,7 @@ def test_get_breadcrumbs():
 
     crumbs = gen._get_breadcrumbs(p3, pages_by_id)
 
-    assert len(crumbs) == 2 # Home and Level A
+    assert len(crumbs) == 2  # Home and Level A
     assert crumbs[0]["title"] == "Home"
     assert crumbs[1]["title"] == "Level A"
     assert crumbs[0]["anchor"] == gen._slugify_url("url/")

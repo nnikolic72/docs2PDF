@@ -23,6 +23,7 @@ def test_is_valid_url():
     # Different domain
     assert crawler._is_valid_url("https://google.com/docs/") is False
 
+
 @pytest.mark.asyncio
 async def test_discover_hierarchy(respx_mock):
     """Test building a hierarchical tree of discovered pages."""
@@ -50,19 +51,25 @@ async def test_discover_hierarchy(respx_mock):
     """
 
     respx_mock.get(root_url).mock(return_value=httpx.Response(200, content=home_html))
-    respx_mock.get("https://example.com/docs/get-started/").mock(return_value=httpx.Response(200, content=get_started_html))
-    respx_mock.get("https://example.com/docs/core-concepts/").mock(return_value=httpx.Response(200, content="<html><title>Core</title></html>"))
-    respx_mock.get("https://example.com/docs/get-started/install/").mock(return_value=httpx.Response(200, content="<html><title>Install</title></html>"))
+    respx_mock.get("https://example.com/docs/get-started/").mock(
+        return_value=httpx.Response(200, content=get_started_html)
+    )
+    respx_mock.get("https://example.com/docs/core-concepts/").mock(
+        return_value=httpx.Response(200, content="<html><title>Core</title></html>")
+    )
+    respx_mock.get("https://example.com/docs/get-started/install/").mock(
+        return_value=httpx.Response(200, content="<html><title>Install</title></html>")
+    )
 
     # We want a shallow discovery that builds the tree
     pages = await crawler.discover_hierarchy(max_depth=2)
 
-    urls = [p['url'] for p in pages]
+    urls = [p["url"] for p in pages]
     assert root_url in urls
     assert "https://example.com/docs/get-started/" in urls
     assert "https://example.com/docs/get-started/install/" in urls
 
     # Check parent-child relationship (mocking what we expect in the list of dicts or objects)
-    get_started = next(p for p in pages if p['url'] == "https://example.com/docs/get-started/")
-    install = next(p for p in pages if p['url'] == "https://example.com/docs/get-started/install/")
-    assert install['parent_url'] == get_started['url']
+    get_started = next(p for p in pages if p["url"] == "https://example.com/docs/get-started/")
+    install = next(p for p in pages if p["url"] == "https://example.com/docs/get-started/install/")
+    assert install["parent_url"] == get_started["url"]

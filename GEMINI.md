@@ -10,7 +10,7 @@ This file provides foundational mandates for the docs2PDF project. These rules m
 - **Type Checking**: `ty`
 - **Pre-commit**: `pre-commit` (ruff, ty, common python hooks)
 - **TUI Framework**: `textual` (for responsive, terminal-sized UI with background workers)
-- **Web Scraping**: `httpx` (async), `beautifulsoup4`, `trafilatura` (for clean content extraction without ads/headers/footers). 
+- **Web Scraping**: `httpx` (async), `beautifulsoup4`, `trafilatura` (for clean content extraction without ads/headers/footers).
     - **Session Management**: Re-use `httpx.AsyncClient` across requests to minimize overhead.
     - **Caching**: Implement and use an in-memory page cache for a single session to prevent redundant fetches during discovery/crawling.
     - **Politeness**: Always include small delays (`asyncio.sleep`) between requests and be mindful of 429 errors.

@@ -23,8 +23,8 @@ class ProjectListScreen(Screen):
                 Button("Add Project", variant="success", id="add_btn"),
                 Button("Open/Resume", id="open_btn"),
                 Button("Archive", variant="error", id="archive_btn"),
-                id="controls"
-            )
+                id="controls",
+            ),
         )
         yield Footer()
 
@@ -35,7 +35,7 @@ class ProjectListScreen(Screen):
         self._refresh_projects()
 
     def _refresh_projects(self) -> None:
-        db = self.app.db # type: ignore
+        db = self.app.db  # type: ignore
         table = self.query_one(DataTable)
         table.clear()
         projects = db.get_all_projects(include_archived=False)
@@ -53,7 +53,7 @@ class ProjectListScreen(Screen):
         if table.cursor_row is not None:
             project_id_str = table.get_row_at(table.cursor_row)[0]
             project_id = int(project_id_str)
-            db = self.app.db # type: ignore
+            db = self.app.db  # type: ignore
             project = db.get_project(project_id)
             if project:
                 pages = db.get_project_pages(project_id)
@@ -61,6 +61,7 @@ class ProjectListScreen(Screen):
                     self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
                 else:
                     self.app.push_screen(PageSelectionScreen(project_id, project.name))
+
 
 class AddProjectScreen(Screen):
     """Screen for adding a new documentation project."""
@@ -74,7 +75,7 @@ class AddProjectScreen(Screen):
                 Button("Save", variant="success", id="save_btn"),
                 Button("Cancel", id="cancel_btn"),
             ),
-            id="form"
+            id="form",
         )
 
     @on(Button.Pressed, "#save_btn")
@@ -83,7 +84,7 @@ class AddProjectScreen(Screen):
         url = self.query_one("#root_url", Input).value
 
         if name and url:
-            db = self.app.db # type: ignore
+            db = self.app.db  # type: ignore
             project_id = db.add_project(Project(name=name, root_url=url))
             self.app.pop_screen()
             self.app.call_after_refresh(self._start_discovery, project_id, url, name)
@@ -94,6 +95,7 @@ class AddProjectScreen(Screen):
     @on(Button.Pressed, "#cancel_btn")
     def cancel(self) -> None:
         self.app.pop_screen()
+
 
 class DiscoveryScreen(Screen):
     """Screen for the initial discovery scan of the documentation tree."""
@@ -108,7 +110,7 @@ class DiscoveryScreen(Screen):
         yield Container(
             Static(f"Discovering hierarchy for {self.project_name}..."),
             Static("This might take a minute depending on the site size.", id="status"),
-            id="discovery_container"
+            id="discovery_container",
         )
 
     def on_mount(self) -> None:
@@ -120,7 +122,7 @@ class DiscoveryScreen(Screen):
         pages_info = await crawler.discover_hierarchy(max_depth=3)
 
         # Save to DB
-        db = self.app.db # type: ignore
+        db = self.app.db  # type: ignore
         url_to_db_id = {}
         # First pass: add all pages
         for info in pages_info:
@@ -144,6 +146,7 @@ class DiscoveryScreen(Screen):
         self.app.pop_screen()
         self.app.push_screen(PageSelectionScreen(self.project_id, self.project_name))
 
+
 class PageSelectionScreen(Screen):
     """Screen for selecting/deselecting documentation pages hierarchically."""
 
@@ -160,7 +163,7 @@ class PageSelectionScreen(Screen):
             Horizontal(
                 Button("Download Selected", variant="success", id="download_btn"),
                 Button("Back", id="back_btn"),
-            )
+            ),
         )
         yield Footer()
 
@@ -168,7 +171,7 @@ class PageSelectionScreen(Screen):
         self._load_tree()
 
     def _load_tree(self) -> None:
-        db = self.app.db # type: ignore
+        db = self.app.db  # type: ignore
         pages = db.get_project_pages(self.project_id)
         tree = self.query_one(CheckboxTree)
         tree.root.expand()
@@ -183,9 +186,7 @@ class PageSelectionScreen(Screen):
             for page in pages_by_parent.get(parent_id, []):
                 parent_node = nodes[parent_id]
                 new_node = parent_node.add(
-                    page.title, 
-                    data={"id": page.id, "is_selected": page.is_selected},
-                    expand=True
+                    page.title, data={"id": page.id, "is_selected": page.is_selected}, expand=True
                 )
                 nodes[page.id] = new_node
                 add_children(page.id)
@@ -198,13 +199,14 @@ class PageSelectionScreen(Screen):
         tree.toggle_node(event.node)
 
         # Save change to DB
-        db = self.app.db # type: ignore
+        db = self.app.db  # type: ignore
         if event.node.data:
             db.update_page_selection(event.node.data["id"], event.node.data["is_selected"], recursive=True)
 
     @on(Button.Pressed, "#download_btn")
     def start_download(self) -> None:
         self.app.push_screen(CrawlerProgressScreen(self.project_id, self.project_name))
+
 
 class CrawlerProgressScreen(Screen):
     """Screen showing the background crawl progress and PDF generation."""
@@ -219,7 +221,7 @@ class CrawlerProgressScreen(Screen):
         yield Container(
             Static(f"Downloading {self.project_name} in background..."),
             Static("Initializing...", id="progress_log"),
-            Button("Stop", variant="error", id="stop_btn")
+            Button("Stop", variant="error", id="stop_btn"),
         )
         yield Footer()
 
@@ -228,7 +230,7 @@ class CrawlerProgressScreen(Screen):
 
     @work(exclusive=True)
     async def run_crawler(self) -> None:
-        db = self.app.db # type: ignore
+        db = self.app.db  # type: ignore
         project = db.get_project(self.project_id)
         pages = db.get_project_pages(self.project_id)
         selected_urls = {p.url for p in pages if p.is_selected}
@@ -252,6 +254,7 @@ class CrawlerProgressScreen(Screen):
         for worker in self.workers:
             worker.cancel()
         self.app.pop_screen()
+
 
 class Docs2PDFApp(App):
     """The main application class."""
@@ -279,6 +282,7 @@ class Docs2PDFApp(App):
 
     def on_mount(self) -> None:
         self.push_screen(ProjectListScreen())
+
 
 if __name__ == "__main__":
     app = Docs2PDFApp(Path("docs2pdf.db"))

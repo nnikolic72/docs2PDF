@@ -10,11 +10,13 @@ from docs2pdf.database import DatabaseManager, Page, Project
 def db_path(tmp_path: Path) -> Path:
     return tmp_path / "test_docs2pdf.db"
 
+
 @pytest.fixture
 def db_manager(db_path: Path) -> DatabaseManager:
     manager = DatabaseManager(db_path)
     manager.initialize()
     return manager
+
 
 def test_pages_table_exists(db_path: Path):
     manager = DatabaseManager(db_path)
@@ -22,6 +24,7 @@ def test_pages_table_exists(db_path: Path):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pages'")
         assert cursor.fetchone() is not None
+
 
 def test_add_and_get_pages(db_manager: DatabaseManager):
     project_id = db_manager.add_project(Project(name="Test", root_url="url"))
@@ -37,6 +40,7 @@ def test_add_and_get_pages(db_manager: DatabaseManager):
     assert pages[0].title == "Page 1"
     assert pages[1].parent_id == page1_id
 
+
 def test_update_page_selection(db_manager: DatabaseManager):
     project_id = db_manager.add_project(Project(name="Test", root_url="url"))
     page_id = db_manager.add_page(Page(project_id=project_id, url="url/1", title="Page 1"))
@@ -48,6 +52,7 @@ def test_update_page_selection(db_manager: DatabaseManager):
     db_manager.update_page_selection(page_id, True)
     page = db_manager.get_page(page_id)
     assert page.is_selected is True
+
 
 def test_update_page_selection_recursive(db_manager: DatabaseManager):
     project_id = db_manager.add_project(Project(name="Test", root_url="url"))
