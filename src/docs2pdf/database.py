@@ -150,6 +150,11 @@ class DatabaseManager:
         """Archive a project."""
         self.update_project(project_id, {"is_archived": True})
 
+    def delete_project_pages(self, project_id: int) -> None:
+        """Delete all pages for a given project."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM pages WHERE project_id = ?", (project_id,))
+
     def add_page(self, page: Page) -> int:
         """Add a new page to a project."""
         with self._get_connection() as conn:

@@ -1,3 +1,5 @@
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 from textual import on, work
@@ -22,6 +24,7 @@ class ProjectListScreen(Screen):
             Horizontal(
                 Button("Add Project", variant="success", id="add_btn"),
                 Button("Open/Resume", id="open_btn"),
+                Button("Reset Project", variant="warning", id="reset_btn"),
                 Button("Archive", variant="error", id="archive_btn"),
                 id="controls",
             ),
@@ -61,6 +64,40 @@ class ProjectListScreen(Screen):
                     self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
                 else:
                     self.app.push_screen(PageSelectionScreen(project_id, project.name))
+
+    @on(Button.Pressed, "#reset_btn")
+    def action_reset_project(self) -> None:
+        table = self.query_one(DataTable)
+        if table.cursor_row is not None:
+            project_id_str = table.get_row_at(table.cursor_row)[0]
+            project_id = int(project_id_str)
+            db = self.app.db  # type: ignore
+            project = db.get_project(project_id)
+            if project:
+                project_dir = Path("projects") / project.name
+
+                # 1. Archive existing PDF if it exists
+                pdf_path = project_dir / "documentation.pdf"
+                if pdf_path.exists():
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    archive_path = project_dir / f"documentation_archive_{timestamp}.pdf"
+                    shutil.move(pdf_path, archive_path)
+
+                # 2. Delete all downloaded files (content and images directories)
+                content_dir = project_dir / "content"
+                if content_dir.exists():
+                    shutil.rmtree(content_dir)
+                images_dir = project_dir / "images"
+                if images_dir.exists():
+                    shutil.rmtree(images_dir)
+
+                # 3. Clear database pages and update status
+                db.delete_project_pages(project_id)
+                db.update_project(project_id, {"status": "pending"})
+
+                # 4. Refresh UI and push discovery screen
+                self._refresh_projects()
+                self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
 
 
 class AddProjectScreen(Screen):

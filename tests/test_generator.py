@@ -40,7 +40,7 @@ def test_rewrite_links():
     }
 
     html = '<a href="https://example.com/docs/get-started/">Link</a> and <a href="https://google.com">External</a>'
-    rewritten = gen._rewrite_links(html)
+    rewritten = gen._rewrite_links(html, "https://example.com/docs/")
 
     assert '<a href="#get-started">Link</a>' in rewritten
     assert '<a href="https://google.com">External</a>' in rewritten

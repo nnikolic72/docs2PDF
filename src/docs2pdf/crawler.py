@@ -138,7 +138,9 @@ class Crawler:
 
     def _extract_content(self, html: str) -> str | None:
         """Extract clean content from HTML using trafilatura."""
-        return trafilatura.extract(html, include_images=True, include_links=True, output_format="xml")
+        return trafilatura.extract(
+            html, include_images=True, include_links=True, include_formatting=True, output_format="html"
+        )
 
     async def crawl_page(self, url: str, client: httpx.AsyncClient | None = None) -> None:
         """Download and save a single page's clean content."""
@@ -146,7 +148,7 @@ class Crawler:
             return
 
         filename = urlparse(url).path.strip("/").replace("/", "_") or "index"
-        filepath = self.project_dir / "content" / f"{filename}.xml"
+        filepath = self.project_dir / "content" / f"{filename}.html"
 
         if filepath.exists():
             self.visited_urls.add(url)

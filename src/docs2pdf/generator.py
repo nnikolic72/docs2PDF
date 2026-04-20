@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
@@ -135,13 +135,15 @@ class PDFGenerator:
             return "root"
         return path.replace("/", "_")
 
-    def _rewrite_links(self, html_content: str) -> str:
+    def _rewrite_links(self, html_content: str, base_url: str) -> str:
         """Convert external documentation URLs to internal PDF anchors."""
         soup = BeautifulSoup(html_content, "html.parser")
         for a in soup.find_all("a", href=True):
-            href = a["href"].rstrip("/") + "/"
-            if href in self.url_to_id:
-                a["href"] = f"#{self.url_to_id[href]}"
+            absolute_href = urljoin(base_url, a["href"])
+            clean_href = absolute_href.split("#")[0].rstrip("/") + "/"
+            if clean_href in self.url_to_id:
+                # Point to the anchor of the page
+                a["href"] = f"#{self.url_to_id[clean_href]}"
         return str(soup)
 
     def _get_breadcrumbs(self, page: Page, pages_by_id: dict[int, Page]) -> list[dict[str, str]]:
@@ -167,17 +169,15 @@ class PDFGenerator:
         for page in selected_pages:
             # Read saved content from Phase 3
             filename = urlparse(page.url).path.strip("/").replace("/", "_") or "index"
-            filepath = self.content_dir / f"{filename}.xml"
+            filepath = self.content_dir / f"{filename}.html"
 
             if not filepath.exists():
                 logger.warning(f"Content file not found for {page.url}: {filepath}")
                 continue
 
             raw_content = filepath.read_text(encoding="utf-8")
-            # We assume trafilatura output is XML, we might need a shallow parse
-            # if we want to extract only the main content part.
 
-            rewritten_content = self._rewrite_links(raw_content)
+            rewritten_content = self._rewrite_links(raw_content, page.url)
 
             render_data.append(
                 {

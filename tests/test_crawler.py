@@ -30,7 +30,7 @@ async def test_crawler_uses_provided_session(tmp_path):
         await crawler.crawl_page(root_url, client=mock_client)
 
     # Check if file was created
-    filename = "docs.xml"  # /docs/ becomes docs.xml
+    filename = "docs.html"  # /docs/ becomes docs.html
     content_file = tmp_path / "test_project" / "content" / filename
     assert content_file.exists()
 

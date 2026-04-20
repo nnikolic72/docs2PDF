@@ -66,3 +66,15 @@ def test_update_page_selection_recursive(db_manager: DatabaseManager):
     assert db_manager.get_page(p_id).is_selected is False
     assert db_manager.get_page(c_id).is_selected is False
     assert db_manager.get_page(gc_id).is_selected is False
+
+
+def test_delete_project_pages(db_manager: DatabaseManager):
+    project_id = db_manager.add_project(Project(name="Test Delete", root_url="url"))
+    db_manager.add_page(Page(project_id=project_id, url="url/1", title="Page 1"))
+    db_manager.add_page(Page(project_id=project_id, url="url/2", title="Page 2"))
+
+    assert len(db_manager.get_project_pages(project_id)) == 2
+
+    db_manager.delete_project_pages(project_id)
+
+    assert len(db_manager.get_project_pages(project_id)) == 0

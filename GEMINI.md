@@ -32,3 +32,12 @@ This file provides foundational mandates for the docs2PDF project. These rules m
 - Only crawl links on the same domain and at the same or deeper hierarchical level as the provided root URL.
 - Inject PDF breadcrumbs at the top of extracted pages for easy hierarchy navigation.
 - PDF generation must produce a single, beautifully formatted file optimized for the reMarkable Paper Pro.
+
+## Development Commands
+You can use `make` or `uv run` to perform common development tasks.
+- **Run tests:** `make test` or `uv run pytest`
+- **Lint code (and sort imports):** `make lint` or `uv run ruff check .`
+  - To automatically fix lint errors and sort imports: `uv run ruff check --fix .`
+  - To run type checker: `uv run ty check src/`
+- **Format code:** `make format` or `uv run ruff format .`
+- **Run the app:** `make run` or `PYTHONPATH=src uv run python -m docs2pdf`
