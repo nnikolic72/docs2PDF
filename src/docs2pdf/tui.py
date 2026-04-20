@@ -75,12 +75,13 @@ class ProjectListScreen(Screen):
             project = db.get_project(project_id)
             if project:
                 project_dir = Path("projects") / project.name
+                safe_name = project.name.replace(" ", "_").lower()
 
                 # 1. Archive existing PDF if it exists
-                pdf_path = project_dir / "documentation.pdf"
+                pdf_path = project_dir / f"{safe_name}.pdf"
                 if pdf_path.exists():
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    archive_path = project_dir / f"documentation_archive_{timestamp}.pdf"
+                    archive_path = project_dir / f"{safe_name}_archive_{timestamp}.pdf"
                     shutil.move(pdf_path, archive_path)
 
                 # 2. Delete all downloaded files (content and images directories)

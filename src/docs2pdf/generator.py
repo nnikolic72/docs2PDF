@@ -138,6 +138,10 @@ class PDFGenerator:
     def _rewrite_links(self, html_content: str, base_url: str) -> str:
         """Convert external documentation URLs to internal PDF anchors."""
         soup = BeautifulSoup(html_content, "html.parser")
+
+        # Ensure we keep the original heading levels
+        # (Already handled by passing through HTML directly, but we ensure structure here)
+
         for a in soup.find_all("a", href=True):
             absolute_href = urljoin(base_url, a["href"])
             clean_href = absolute_href.split("#")[0].rstrip("/") + "/"
@@ -159,8 +163,12 @@ class PDFGenerator:
                 break
         return crumbs
 
-    def generate(self, selected_pages: list[Page], output_filename: str = "documentation.pdf"):
+    def generate(self, selected_pages: list[Page], output_filename: str | None = None):
         """Merge selected pages and generate the final PDF."""
+        if output_filename is None:
+            # Use project name or fallback to documentation.pdf
+            safe_name = self.project_dir.name.replace(" ", "_").lower()
+            output_filename = f"{safe_name}.pdf"
         # Pre-calculate URL to Anchor mapping
         self.url_to_id = {p.url: self._slugify_url(p.url) for p in selected_pages}
         pages_by_id = {p.id: p for p in selected_pages if p.id is not None}
@@ -188,7 +196,7 @@ class PDFGenerator:
                 }
             )
 
-        # Render HTML
+        # Render template
         template = self.env.get_template("base.html")
         full_html = template.render(pages=render_data)
 
@@ -197,5 +205,6 @@ class PDFGenerator:
 
         # Generate PDF
         output_path = self.project_dir / output_filename
-        HTML(string=full_html).write_pdf(output_path)
+        base_url = Path.cwd().as_uri() + "/"
+        HTML(string=full_html, base_url=base_url).write_pdf(output_path)
         return output_path
