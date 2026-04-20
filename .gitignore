@@ -201,6 +201,11 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# docs2PDF specific
+docs2pdf.db
+docs2pdf.db-journal
+projects/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

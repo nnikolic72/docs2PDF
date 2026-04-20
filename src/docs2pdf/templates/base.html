@@ -1,0 +1,59 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: 1620px 2160px; /* reMarkable Paper Pro aspect ratio */
+            margin: 60px;
+        }
+        body {
+            font-family: serif;
+            font-size: 18px;
+            line-height: 1.5;
+            color: #111;
+        }
+        .section {
+            page-break-before: always;
+        }
+        .breadcrumbs {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .breadcrumbs a {
+            color: #666;
+            text-decoration: none;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 20px auto;
+        }
+        h1 { font-size: 32px; margin-top: 0; }
+        h2 { font-size: 26px; }
+        a { color: #004a99; }
+    </style>
+</head>
+<body>
+    {% for page in pages %}
+    <div class="section" id="{{ page.anchor }}">
+        <div class="breadcrumbs">
+            {% for crumb in page.breadcrumbs %}
+            <a href="#{{ crumb.anchor }}">{{ crumb.title }}</a>
+            {% if not loop.last %} / {% endif %}
+            {% endfor %}
+        </div>
+        <h1>{{ page.title }}</h1>
+        <div class="content">
+            {{ page.content | safe }}
+        </div>
+    </div>
+    {% endfor %}
+</body>
+</html>
+            

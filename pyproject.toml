@@ -1,0 +1,66 @@
+[project]
+name = "docs2pdf"
+version = "0.1.0"
+description = "Download documentation from web sites and convert into beautiful PDF for reMarkable Paper Pro."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.3",
+    "textual>=8.2.4",
+    "trafilatura>=2.0.0",
+    "weasyprint>=68.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM", "TID"]
+ignore = [
+    "E501", # line length handled by formatter
+    "W191", # tab indentation
+    "E111", # indentation is not a multiple of four
+    "E114", # indentation is not a multiple of four (comment)
+    "E117", # over-indented
+    "D206", # docstring is indented with tabs
+    "D300", # triple single quotes
+    "Q000", # bad quotes inline
+    "Q001", # bad quotes multiline
+    "Q002", # bad quotes docstring
+    "Q003", # avoidable escaped quote
+    "COM812", # missing trailing comma
+    "COM819", # prohibited trailing comma
+    "ISC001", # single line implicit string concatenation
+    "ISC002", # multi line implicit string concatenation
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["docs2pdf"]
+
+[tool.ty]
+rules = { "invalid-method-override" = "ignore" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = "--cov=src --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.15.11",
+    "textual-dev>=1.8.0",
+    "ty>=0.0.31",
+    "types-beautifulsoup4>=4.12.0.20250516",
+    "types-jinja2>=2.11.9",
+    "types-pyyaml>=6.0.12.20260408",
+]
