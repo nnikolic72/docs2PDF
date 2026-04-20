@@ -245,6 +245,10 @@ class PageSelectionScreen(Screen):
     def start_download(self) -> None:
         self.app.push_screen(CrawlerProgressScreen(self.project_id, self.project_name))
 
+    @on(Button.Pressed, "#back_btn")
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
 
 class CrawlerProgressScreen(Screen):
     """Screen showing the background crawl progress and PDF generation."""
