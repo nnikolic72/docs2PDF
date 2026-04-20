@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -18,13 +19,28 @@ class Crawler:
     """
 
     def __init__(self, root_url: str, project_name: str, base_dir: Path = Path("projects")):
-        self.root_url = root_url.rstrip("/") + "/"
+        self.root_url = root_url.split("#")[0].rstrip("/")
+        if not self.root_url.split("/")[-1].count("."):
+            self.root_url += "/"
+
         self.project_name = project_name
         self.project_dir = base_dir / project_name
         self.visited_urls: set[str] = set()
-        self.root_domain = urlparse(root_url).netloc
-        self.root_path = urlparse(self.root_url).path
+        parsed_root = urlparse(self.root_url)
+        self.root_domain = parsed_root.netloc
+
+        # Base path for hierarchy: the directory containing the root URL
+        path = parsed_root.path if parsed_root.path else "/"
+        if "/" in path:
+            self.base_path = path.rsplit("/", 1)[0] + "/"
+        else:
+            self.base_path = "/"
+
         self._page_cache: dict[str, str] = {}  # url -> html content
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        }
 
         # Ensure project directory exists
         self.project_dir.mkdir(parents=True, exist_ok=True)
@@ -41,9 +57,9 @@ class Crawler:
         if parsed.netloc and parsed.netloc != self.root_domain:
             return False
 
-        # Check hierarchy
+        # Check hierarchy: must be at or below base_path
         path = parsed.path if parsed.path else "/"
-        return path.startswith(self.root_path)
+        return path.startswith(self.base_path)
 
     async def _fetch_page(self, url: str, client: httpx.AsyncClient | None = None) -> str | None:
         """Fetch page content with httpx, reusing client if provided and caching results."""
@@ -51,11 +67,11 @@ class Crawler:
             return self._page_cache[url]
 
         if client is None:
-            async with httpx.AsyncClient(follow_redirects=True) as local_client:
+            async with httpx.AsyncClient(follow_redirects=True, headers=self.headers) as local_client:
                 return await self._fetch_page(url, client=local_client)
 
         try:
-            response = await client.get(url, timeout=10.0)
+            response = await client.get(url, timeout=15.0)
             response.raise_for_status()
             html = response.text
             self._page_cache[url] = html
@@ -63,6 +79,13 @@ class Crawler:
         except Exception as e:
             logger.error(f"Error fetching {url}: {e}")
             return None
+
+    def _clean_url(self, url: str) -> str:
+        """Normalize URL by removing fragments and ensuring consistent trailing slashes for directories."""
+        url = url.split("#")[0].rstrip("/")
+        if not url.split("/")[-1].count("."):
+            url += "/"
+        return url
 
     def _extract_title(self, html: str) -> str:
         """Extract page title using BeautifulSoup."""
@@ -85,24 +108,24 @@ class Crawler:
 
         for a in soup.find_all("a", href=True):
             absolute_url = urljoin(url, a["href"])
-            clean_url = absolute_url.split("#")[0].rstrip("/") + "/"
+            clean_url = self._clean_url(absolute_url)
             if self._is_valid_url(clean_url):
                 links.append({"url": clean_url, "title": a.get_text().strip() or "No Title"})
         return links
 
     async def discover_hierarchy(
-        self, max_depth: int = 5, client: httpx.AsyncClient | None = None
+        self, max_depth: int = 6, client: httpx.AsyncClient | None = None
     ) -> list[dict[str, Any]]:
         """
         Build a hierarchical tree of discovered pages.
         Returns a flat list of dicts with parent_url references for easy tree building in TUI.
         """
         if client is None:
-            async with httpx.AsyncClient(follow_redirects=True) as local_client:
+            async with httpx.AsyncClient(follow_redirects=True, headers=self.headers) as local_client:
                 return await self.discover_hierarchy(max_depth=max_depth, client=local_client)
 
         discovered_pages: dict[str, dict[str, Any]] = {}
-        queue: list[dict[str, Any]] = [{"url": self.root_url, "parent_url": None, "depth": 0}]
+        queue: list[dict[str, Any]] = [{"url": self._clean_url(self.root_url), "parent_url": None, "depth": 0}]
 
         while queue:
             current = queue.pop(0)
@@ -127,7 +150,7 @@ class Crawler:
             soup = BeautifulSoup(html, "html.parser")
             for a in soup.find_all("a", href=True):
                 absolute_url = urljoin(url, a["href"])
-                clean_url = absolute_url.split("#")[0].rstrip("/") + "/"
+                clean_url = self._clean_url(absolute_url)
 
                 if self._is_valid_url(clean_url) and clean_url not in discovered_pages:
                     queue.append({"url": clean_url, "parent_url": url, "depth": depth + 1})
@@ -142,7 +165,9 @@ class Crawler:
             html, include_images=True, include_links=True, include_formatting=True, output_format="html"
         )
 
-    async def crawl_page(self, url: str, client: httpx.AsyncClient | None = None) -> None:
+    async def crawl_page(
+        self, url: str, client: httpx.AsyncClient | None = None, on_progress: Callable[[str, str], None] | None = None
+    ) -> None:
         """Download and save a single page's clean content."""
         if url in self.visited_urls:
             return
@@ -152,38 +177,68 @@ class Crawler:
 
         if filepath.exists():
             self.visited_urls.add(url)
+            if on_progress:
+                on_progress(url, "done")
             return
+
+        if on_progress:
+            on_progress(url, "downloading")
 
         self.visited_urls.add(url)
         html = await self._fetch_page(url, client=client)
         if not html:
+            if on_progress:
+                on_progress(url, "error")
             return
 
-        content = self._extract_content(html)
-        if content:
-            filepath.write_text(content, encoding="utf-8")
+        try:
+            content = self._extract_content(html)
+            if content:
+                filepath.write_text(content, encoding="utf-8")
+                if on_progress:
+                    on_progress(url, "done")
+            else:
+                if on_progress:
+                    on_progress(url, "error")
+        except Exception as e:
+            logger.error(f"Error processing {url}: {e}")
+            if on_progress:
+                on_progress(url, "error")
 
-    async def run(self, selected_urls: set[str] | None = None, client: httpx.AsyncClient | None = None):
+    async def run(
+        self,
+        selected_urls: set[str] | None = None,
+        max_depth: int = 6,
+        client: httpx.AsyncClient | None = None,
+        on_progress: Callable[[str, str], None] | None = None,
+    ):
         """
         Main entry point for crawling.
         If selected_urls is provided, only crawl those.
         """
         if client is None:
-            async with httpx.AsyncClient(follow_redirects=True) as local_client:
-                await self.run(selected_urls=selected_urls, client=local_client)
+            async with httpx.AsyncClient(follow_redirects=True, headers=self.headers) as local_client:
+                await self.run(
+                    selected_urls=selected_urls, max_depth=max_depth, client=local_client, on_progress=on_progress
+                )
                 return
 
         if selected_urls:
             for url in selected_urls:
-                await self.crawl_page(url, client=client)
+                await self.crawl_page(url, client=client, on_progress=on_progress)
+                await asyncio.sleep(0.05)  # Be polite
         else:
             # Fallback to full recursive crawl
-            queue = [self.root_url]
+            queue: list[dict[str, Any]] = [{"url": self._clean_url(self.root_url), "depth": 0}]
             while queue:
-                current_url = queue.pop(0)
-                if current_url in self.visited_urls:
+                current = queue.pop(0)
+                current_url = current["url"]
+                depth = current["depth"]
+
+                if current_url in self.visited_urls or depth > max_depth:
                     continue
-                await self.crawl_page(current_url, client=client)
+
+                await self.crawl_page(current_url, client=client, on_progress=on_progress)
 
                 # Discovery for recursive mode
                 html = await self._fetch_page(current_url, client=client)
@@ -191,7 +246,7 @@ class Crawler:
                     soup = BeautifulSoup(html, "html.parser")
                     for a in soup.find_all("a", href=True):
                         absolute_url = urljoin(current_url, a["href"])
-                        clean_url = absolute_url.split("#")[0].rstrip("/") + "/"
+                        clean_url = self._clean_url(absolute_url)
                         if self._is_valid_url(clean_url) and clean_url not in self.visited_urls:
-                            queue.append(clean_url)
+                            queue.append({"url": clean_url, "depth": depth + 1})
                 await asyncio.sleep(0.05)

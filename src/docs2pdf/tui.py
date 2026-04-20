@@ -11,7 +11,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Static, Tr
 from docs2pdf.crawler import Crawler
 from docs2pdf.database import DatabaseManager, Page, Project
 from docs2pdf.generator import PDFGenerator
-from docs2pdf.widgets import CheckboxTree
+from docs2pdf.widgets import CheckboxTree, DownloadProgress
 
 
 class ProjectListScreen(Screen):
@@ -24,6 +24,7 @@ class ProjectListScreen(Screen):
             Horizontal(
                 Button("Add Project", variant="success", id="add_btn"),
                 Button("Open/Resume", id="open_btn"),
+                Button("Rename", id="rename_btn"),
                 Button("Reset Project", variant="warning", id="reset_btn"),
                 Button("Archive", variant="error", id="archive_btn"),
                 id="controls",
@@ -65,6 +66,22 @@ class ProjectListScreen(Screen):
                 else:
                     self.app.push_screen(PageSelectionScreen(project_id, project.name))
 
+    @on(Button.Pressed, "#rename_btn")
+    def action_rename_project(self) -> None:
+        table = self.query_one(DataTable)
+        if table.cursor_row is not None:
+            project_id_str = table.get_row_at(table.cursor_row)[0]
+            project_id = int(project_id_str)
+            db = self.app.db  # type: ignore
+            project = db.get_project(project_id)
+            if project:
+
+                def handle_rename(new_name: str | None) -> None:
+                    if new_name:
+                        self._refresh_projects()
+
+                self.app.push_screen(RenameProjectScreen(project), callback=handle_rename)
+
     @on(Button.Pressed, "#reset_btn")
     def action_reset_project(self) -> None:
         table = self.query_one(DataTable)
@@ -99,6 +116,52 @@ class ProjectListScreen(Screen):
                 # 4. Refresh UI and push discovery screen
                 self._refresh_projects()
                 self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
+
+
+class RenameProjectScreen(Screen[str]):
+    """Screen for renaming an existing documentation project."""
+
+    def __init__(self, project: Project):
+        super().__init__()
+        self.project = project
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Static(f"Rename Project: {self.project.name}", id="title"),
+            Input(value=self.project.name, placeholder="New Project Name", id="new_project_name"),
+            Horizontal(
+                Button("Save", variant="success", id="save_btn"),
+                Button("Cancel", id="cancel_btn"),
+            ),
+            id="form",
+        )
+
+    @on(Button.Pressed, "#save_btn")
+    def save_rename(self) -> None:
+        new_name = self.query_one("#new_project_name", Input).value
+
+        if new_name and new_name != self.project.name:
+            # 1. Rename directory if it exists
+            old_dir = Path("projects") / self.project.name
+            new_dir = Path("projects") / new_name
+
+            if old_dir.exists():
+                try:
+                    old_dir.rename(new_dir)
+                except Exception as e:
+                    # In a real app we might want to show an error message
+                    print(f"Error renaming directory: {e}")
+
+            # 2. Update database
+            db = self.app.db  # type: ignore
+            db.update_project(self.project.id, {"name": new_name})
+            self.dismiss(new_name)
+        else:
+            self.dismiss(None)
+
+    @on(Button.Pressed, "#cancel_btn")
+    def cancel(self) -> None:
+        self.dismiss(None)
 
 
 class AddProjectScreen(Screen):
@@ -157,7 +220,7 @@ class DiscoveryScreen(Screen):
     @work(exclusive=True)
     async def run_discovery(self) -> None:
         crawler = Crawler(self.root_url, self.project_name)
-        pages_info = await crawler.discover_hierarchy(max_depth=3)
+        pages_info = await crawler.discover_hierarchy(max_depth=6)
 
         # Save to DB
         db = self.app.db  # type: ignore
@@ -262,6 +325,7 @@ class CrawlerProgressScreen(Screen):
         yield Header()
         yield Container(
             Static(f"Downloading {self.project_name} in background..."),
+            DownloadProgress(id="download_progress"),
             Static("Initializing...", id="progress_log"),
             Button("Stop", variant="error", id="stop_btn"),
         )
@@ -278,10 +342,14 @@ class CrawlerProgressScreen(Screen):
         selected_urls = {p.url for p in pages if p.is_selected}
 
         log = self.query_one("#progress_log", Static)
+        progress = self.query_one("#download_progress", DownloadProgress)
         log.update("Starting crawler...")
 
+        def on_progress(url: str, status: str):
+            self.app.call_from_thread(progress.update_status, url, status)
+
         crawler = Crawler(project.root_url, project.name)
-        await crawler.run(selected_urls=selected_urls)
+        await crawler.run(selected_urls=selected_urls, on_progress=on_progress)
 
         log.update("Crawling complete. Generating PDF...")
         generator = PDFGenerator(project.name, project.root_url)
