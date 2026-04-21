@@ -68,21 +68,87 @@ class PDFGenerator:
 <head>
     <meta charset="UTF-8">
     <style>
+        @font-face {
+            font-family: 'Bookerly';
+            src: url('fonts/bookerly/Bookerly.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Bookerly';
+            src: url('fonts/bookerly/Bookerly Bold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Bookerly';
+            src: url('fonts/bookerly/Bookerly Italic.ttf') format('truetype');
+            font-weight: normal;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'Bookerly';
+            src: url('fonts/bookerly/Bookerly Bold Italic.ttf') format('truetype');
+            font-weight: bold;
+            font-style: italic;
+        }
+        @font-face {
+            font-family: 'JetBrains Mono';
+            src: url('fonts/jetbrains-mono/JetbrainsMonoRegular-RpvmM.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'JetBrains Mono';
+            src: url('fonts/jetbrains-mono/JetbrainsMonoBold-51Xez.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'JetBrains Mono';
+            src: url('fonts/jetbrains-mono/JetbrainsMonoItalic-lg91X.ttf') format('truetype');
+            font-weight: normal;
+            font-style: italic;
+        }
+
         @page {
             size: 1620px 2160px; /* reMarkable Paper Pro aspect ratio */
             margin: 60px;
         }
         body {
-            font-family: serif;
-            font-size: 18px;
+            font-family: 'Bookerly', serif;
+            font-size: 30px;
             line-height: 1.5;
             color: #111;
+        }
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 25px;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 25px 0;
+        }
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            background-color: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        pre code {
+            font-size: 1em;
+            background-color: transparent;
+            padding: 0;
+            border-radius: 0;
         }
         .section {
             page-break-before: always;
         }
         .breadcrumbs {
-            font-size: 14px;
+            font-size: 20px;
             color: #666;
             margin-bottom: 20px;
             border-bottom: 1px solid #eee;
@@ -98,8 +164,9 @@ class PDFGenerator:
             display: block;
             margin: 20px auto;
         }
-        h1 { font-size: 32px; margin-top: 0; }
-        h2 { font-size: 26px; }
+        h1 { font-size: 52px; margin-top: 0; }
+        h2 { font-size: 44px; }
+        h3 { font-size: 36px; }
         a { color: #004a99; }
     </style>
 </head>
@@ -211,7 +278,7 @@ class PDFGenerator:
         full_html = template.render(pages=render_data)
 
         # Save HTML for debugging if needed
-        # (self.project_dir / "debug.html").write_text(full_html, encoding="utf-8")
+        (self.project_dir / "debug.html").write_text(full_html, encoding="utf-8")
 
         # Generate PDF
         output_path = self.project_dir / output_filename

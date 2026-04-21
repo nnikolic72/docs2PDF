@@ -197,9 +197,27 @@ class Crawler:
 
     def _extract_content(self, html: str) -> str | None:
         """Extract clean content from HTML using trafilatura."""
-        return trafilatura.extract(
+        content = trafilatura.extract(
             html, include_images=True, include_links=True, include_formatting=True, output_format="html"
         )
+        if not content:
+            return None
+
+        # Post-process to fix trafilatura converting all code to <pre>
+        soup = BeautifulSoup(content, "html.parser")
+
+        # 1. pre inside p should be code (inline)
+        for p in soup.find_all("p"):
+            for pre in p.find_all("pre"):
+                pre.name = "code"
+
+        # 2. pre inside pre should be pre > code (block)
+        for pre in soup.find_all("pre"):
+            inner_pre = pre.find("pre")
+            if inner_pre:
+                inner_pre.name = "code"
+
+        return str(soup)
 
     async def crawl_page(
         self, url: str, client: httpx.AsyncClient | None = None, on_progress: Callable[[str, str], None] | None = None
