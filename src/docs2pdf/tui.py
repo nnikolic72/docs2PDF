@@ -169,11 +169,15 @@ class EditProjectScreen(Screen[Project]):
         self.project = project
 
     def compose(self) -> ComposeResult:
+        # Convert space-separated URLs to newline-separated for TextArea
+        urls_display = self.project.root_url.replace(" ", "\n")
         yield Container(
             Container(
                 Static(f"Edit Project: {self.project.name}", id="title"),
                 Static("Project Name:", classes="label"),
                 Input(value=self.project.name, placeholder="Project Name", id="project_name"),
+                Static("Root URLs (one per line):", classes="label"),
+                TextArea(urls_display, id="root_urls"),
                 Static("Exclude patterns (comma-separated):", classes="label"),
                 Input(value=self.project.exclude_patterns, placeholder="Exclude patterns", id="exclude_patterns"),
                 id="form",
@@ -189,7 +193,19 @@ class EditProjectScreen(Screen[Project]):
     @on(Button.Pressed, "#save_btn")
     def save_changes(self) -> None:
         new_name = self.query_one("#project_name", Input).value
+        new_urls_text = self.query_one("#root_urls", TextArea).text
         new_exclude = self.query_one("#exclude_patterns", Input).value
+
+        # Extract all URLs from text
+        found_urls = re.findall(r"https?://[^\s]+", new_urls_text)
+        seen = set()
+        ordered_urls = []
+        for u in found_urls:
+            u = u.rstrip(".,;!?)")
+            if u not in seen:
+                ordered_urls.append(u)
+                seen.add(u)
+        new_urls = " ".join(ordered_urls)
 
         updates: dict[str, Any] = {}
         if new_name and new_name != self.project.name:
@@ -205,6 +221,9 @@ class EditProjectScreen(Screen[Project]):
                     print(f"Error renaming directory: {e}")
             updates["name"] = new_name
 
+        if ordered_urls and new_urls != self.project.root_url:
+            updates["root_url"] = new_urls
+
         if new_exclude != self.project.exclude_patterns:
             updates["exclude_patterns"] = new_exclude
 
@@ -213,6 +232,7 @@ class EditProjectScreen(Screen[Project]):
             db.update_project(self.project.id, updates)
             # Return updated project
             self.project.name = new_name
+            self.project.root_url = new_urls
             self.project.exclude_patterns = new_exclude
             self.dismiss(self.project)
         else:
