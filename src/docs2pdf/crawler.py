@@ -195,15 +195,8 @@ class Crawler:
 
         return list(discovered_pages.values())
 
-    def _extract_content(self, html: str) -> str | None:
-        """Extract clean content from HTML using trafilatura."""
-        content = trafilatura.extract(
-            html, include_images=True, include_links=True, include_formatting=True, output_format="html"
-        )
-        if not content:
-            return None
-
-        # Post-process to fix trafilatura converting all code to <pre>
+    def _post_process_content(self, content: str) -> str:
+        """Post-process extracted content to fix formatting and remove noise."""
         soup = BeautifulSoup(content, "html.parser")
 
         # Extract only the body content to avoid nested <html>/<body> tags
@@ -247,21 +240,61 @@ class Crawler:
 
             soup = content_soup
 
-        # 1. pre inside p should be code (inline)
-        for p in soup.find_all("p"):
-            if isinstance(p, Tag):
-                for pre in p.find_all("pre"):
-                    if isinstance(pre, Tag):
-                        pre.name = "code"
-
-        # 2. pre inside pre should be pre > code (block)
+        # 1. Convert appropriate <pre> to <code>
         for pre in soup.find_all("pre"):
-            if isinstance(pre, Tag):
-                inner_pre = pre.find("pre")
-                if inner_pre and isinstance(inner_pre, Tag):
-                    inner_pre.name = "code"
+            if not isinstance(pre, Tag):
+                continue
+
+            # Case: pre inside pre -> inner becomes code (block)
+            inner_pre = pre.find("pre")
+            if inner_pre and isinstance(inner_pre, Tag):
+                inner_pre.name = "code"
+                continue
+
+            # Case: pre inside p -> becomes code (inline)
+            if pre.parent and isinstance(pre.parent, Tag) and pre.parent.name == "p":
+                pre.name = "code"
+                continue
+
+            # Case: pre with no newlines and adjacent to text/inline content
+            if "\n" not in pre.get_text():
+                is_inline = False
+                prev_sib = pre.previous_sibling
+                if prev_sib and not isinstance(prev_sib, Tag) and prev_sib.strip():
+                    is_inline = True
+
+                next_sib = pre.next_sibling
+                if not is_inline and next_sib and not isinstance(next_sib, Tag) and next_sib.strip():
+                    is_inline = True
+
+                if is_inline:
+                    pre.name = "code"
+
+        # 2. Merge split paragraphs in list items
+        for li in soup.find_all("li"):
+            if not isinstance(li, Tag):
+                continue
+
+            # If li has a mixture of p and text/code, unwrap the p to keep it in one flow
+            p_tags = li.find_all("p", recursive=False)
+            if p_tags and (
+                any(not isinstance(s, Tag) and s.strip() for s in li.children)
+                or any(isinstance(s, Tag) and s.name == "code" for s in li.children)
+            ):
+                for p in p_tags:
+                    p.unwrap()
 
         return str(soup)
+
+    def _extract_content(self, html: str) -> str | None:
+        """Extract clean content from HTML using trafilatura."""
+        content = trafilatura.extract(
+            html, include_images=True, include_links=True, include_formatting=True, output_format="html"
+        )
+        if not content:
+            return None
+
+        return self._post_process_content(content)
 
     async def crawl_page(
         self, url: str, client: httpx.AsyncClient | None = None, on_progress: Callable[[str, str], None] | None = None
