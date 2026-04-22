@@ -331,18 +331,22 @@ class PDFGenerator:
         return path.replace("/", "_")
 
     def _rewrite_links(self, html_content: str, base_url: str) -> str:
-        """Convert external documentation URLs to internal PDF anchors."""
+        """Convert external documentation URLs to internal PDF anchors and fix image paths."""
         soup = BeautifulSoup(html_content, "html.parser")
 
-        # Ensure we keep the original heading levels
-        # (Already handled by passing through HTML directly, but we ensure structure here)
-
+        # Rewrite links to internal anchors
         for a in soup.find_all("a", href=True):
             absolute_href = urljoin(base_url, a["href"])
             clean_href = absolute_href.split("#")[0].rstrip("/") + "/"
             if clean_href in self.url_to_id:
                 # Point to the anchor of the page
                 a["href"] = f"#{self.url_to_id[clean_href]}"
+
+        # Rewrite image paths from ../images/ to images/ (relative to the merged HTML)
+        for img in soup.find_all("img", src=True):
+            if img["src"].startswith("../images/"):
+                img["src"] = img["src"][3:]
+
         return str(soup)
 
     def _get_breadcrumbs(self, page: Page, pages_by_id: dict[int, Page]) -> list[dict[str, str]]:

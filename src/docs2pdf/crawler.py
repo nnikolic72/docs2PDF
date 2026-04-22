@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -28,26 +29,24 @@ class Crawler:
         # Parse multiple URLs
         raw_urls = root_url.split(" ")
         self.root_urls = []
+        self.root_configs = []  # List of (domain, base_path)
         for u in raw_urls:
             clean_u = u.split("#")[0].rstrip("/")
             if not clean_u.split("/")[-1].count("."):
                 clean_u += "/"
             self.root_urls.append(clean_u)
 
-        self.root_url = self.root_urls[0]  # Use first URL for domain logic
+            parsed = urlparse(clean_u)
+            domain = parsed.netloc
+            path = parsed.path if parsed.path else "/"
+            base_path = path.rsplit("/", 1)[0] + "/" if "/" in path else "/"
+            self.root_configs.append((domain, base_path))
+
+        self.root_url = self.root_urls[0]  # Use first URL for default display
         self.project_name = project_name
         self.project_dir = base_dir / project_name
         self.visited_urls: set[str] = set()
         self.exclude_patterns = exclude_patterns or []
-        parsed_root = urlparse(self.root_url)
-        self.root_domain = parsed_root.netloc
-
-        # Base path for hierarchy: the directory containing the root URL
-        path = parsed_root.path if parsed_root.path else "/"
-        if "/" in path:
-            self.base_path = path.rsplit("/", 1)[0] + "/"
-        else:
-            self.base_path = "/"
 
         self._page_cache: dict[str, str] = {}  # url -> html content
         self.headers = {
@@ -62,7 +61,7 @@ class Crawler:
 
     def _is_valid_url(self, url: str) -> bool:
         """
-        Check if the URL is within the same domain, at the same or deeper hierarchy,
+        Check if the URL is within one of the allowed domains and hierarchies,
         and does not match any exclude patterns.
         """
         # Explicitly pasted URLs are always valid
@@ -75,14 +74,15 @@ class Crawler:
                 return False
 
         parsed = urlparse(url)
-
-        # Check domain
-        if parsed.netloc and parsed.netloc != self.root_domain:
-            return False
-
-        # Check hierarchy: must be at or below base_path
+        domain = parsed.netloc
         path = parsed.path if parsed.path else "/"
-        return path.startswith(self.base_path)
+
+        # Check against all root configurations
+        for root_domain, root_base_path in self.root_configs:
+            if domain == root_domain and path.startswith(root_base_path):
+                return True
+
+        return False
 
     async def _fetch_page(self, url: str, client: httpx.AsyncClient | None = None) -> str | None:
         """Fetch page content with httpx, reusing client if provided and caching results."""
@@ -325,6 +325,13 @@ class Crawler:
         try:
             content = self._extract_content(html)
             if content:
+                # Download images and rewrite URLs
+                if client is None:
+                    async with httpx.AsyncClient(follow_redirects=True, headers=self.headers) as local_client:
+                        content = await self._download_images(content, url, local_client)
+                else:
+                    content = await self._download_images(content, url, client)
+
                 filepath.write_text(content, encoding="utf-8")
                 if on_progress:
                     on_progress(url, "done")
@@ -335,6 +342,42 @@ class Crawler:
             logger.error(f"Error processing {url}: {e}")
             if on_progress:
                 on_progress(url, "error")
+
+    async def _download_images(self, html: str, base_url: str, client: httpx.AsyncClient) -> str:
+        """Find images in HTML, download them, and update src to local paths."""
+        soup = BeautifulSoup(html, "html.parser")
+        img_tags = soup.find_all("img")
+
+        for img in img_tags:
+            src = img.get("src")
+            if not src:
+                continue
+
+            abs_url = urljoin(base_url, src)
+            # Create a safe filename for the image
+            ext = Path(urlparse(abs_url).path).suffix or ".png"
+            if len(ext) > 5:  # Handle cases like .png?v=1
+                ext = ext.split("?")[0]
+            if not ext.startswith("."):
+                ext = ".png"
+
+            img_filename = hashlib.md5(abs_url.encode()).hexdigest() + ext
+            img_path = self.project_dir / "images" / img_filename
+
+            if not img_path.exists():
+                try:
+                    response = await client.get(abs_url, timeout=10.0)
+                    if response.status_code == 200:
+                        img_path.write_bytes(response.content)
+                except Exception as e:
+                    logger.error(f"Error downloading image {abs_url}: {e}")
+                    continue
+
+            # Update src to point to local path relative to content/ directory
+            # Since content is in projects/name/content/ and images are in projects/name/images/
+            img["src"] = f"../images/{img_filename}"
+
+        return str(soup)
 
     async def run(
         self,
