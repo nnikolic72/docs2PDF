@@ -1,3 +1,4 @@
+import asyncio
 import re
 import shutil
 from datetime import datetime
@@ -25,12 +26,19 @@ class ProjectListScreen(Screen):
             DataTable(id="projects_table"),
             classes="main-container",
         )
-        yield Horizontal(
-            Button("Add Project", variant="success", id="add_btn"),
-            Button("Open/Resume", id="open_btn"),
-            Button("Edit", id="edit_btn"),
-            Button("Reset Project", variant="warning", id="reset_btn"),
-            Button("Archive", variant="error", id="archive_btn"),
+        yield Container(
+            Horizontal(
+                Button("Add Project", variant="success", id="add_btn"),
+                Button("Open/Resume", id="open_btn"),
+                Button("Rebuild PDF", id="rebuild_btn"),
+                classes="button-row",
+            ),
+            Horizontal(
+                Button("Edit", id="edit_btn"),
+                Button("Reset Project", variant="warning", id="reset_btn"),
+                Button("Archive", variant="error", id="archive_btn"),
+                classes="button-row",
+            ),
             id="controls",
         )
         yield Footer()
@@ -54,6 +62,15 @@ class ProjectListScreen(Screen):
                 display_url += f" (+{len(urls) - 1} more)"
             table.add_row(str(p.id), p.name, display_url, p.status, key=str(p.id))
 
+    def _backup_pdf(self, project_name: str) -> None:
+        project_dir = Path("projects") / project_name
+        safe_name = project_name.replace(" ", "_").lower()
+        pdf_path = project_dir / f"{safe_name}.pdf"
+        if pdf_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = project_dir / f"{safe_name}_archive_{timestamp}.pdf"
+            shutil.move(pdf_path, archive_path)
+
     @on(Button.Pressed, "#add_btn")
     def action_add_project(self) -> None:
         self.app.push_screen(AddProjectScreen())
@@ -73,6 +90,24 @@ class ProjectListScreen(Screen):
                     self.app.push_screen(DiscoveryScreen(project_id, project.root_url, project.name))
                 else:
                     self.app.push_screen(PageSelectionScreen(project_id, project.name))
+
+    @on(Button.Pressed, "#rebuild_btn")
+    def action_rebuild_project(self) -> None:
+        table = self.query_one(DataTable)
+        if table.cursor_row is not None:
+            project_id_str = table.get_row_at(table.cursor_row)[0]
+            project_id = int(project_id_str)
+            db = self.app.db  # type: ignore
+            project = db.get_project(project_id)
+            if project:
+                project_dir = Path("projects") / project.name
+                content_dir = project_dir / "content"
+                if not content_dir.exists() or not any(content_dir.iterdir()):
+                    self.app.notify("No cached content found. Please download first.", severity="error")
+                    return
+
+                self._backup_pdf(project.name)
+                self.app.push_screen(CrawlerProgressScreen(project_id, project.name, rebuild_only=True))
 
     @on(Button.Pressed, "#edit_btn")
     def action_edit_project(self) -> None:
@@ -322,6 +357,7 @@ class PageSelectionScreen(Screen):
         )
         yield Horizontal(
             Button("Download Selected", variant="success", id="download_btn"),
+            Button("Rebuild PDF", id="rebuild_btn"),
             Button("Back", id="back_btn"),
             classes="button-bar",
         )
@@ -363,9 +399,29 @@ class PageSelectionScreen(Screen):
         if event.node.data:
             db.update_page_selection(event.node.data["id"], event.node.data["is_selected"], recursive=True)
 
+    def _backup_pdf(self, project_name: str) -> None:
+        project_dir = Path("projects") / project_name
+        safe_name = project_name.replace(" ", "_").lower()
+        pdf_path = project_dir / f"{safe_name}.pdf"
+        if pdf_path.exists():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = project_dir / f"{safe_name}_archive_{timestamp}.pdf"
+            shutil.move(pdf_path, archive_path)
+
     @on(Button.Pressed, "#download_btn")
     def start_download(self) -> None:
         self.app.push_screen(CrawlerProgressScreen(self.project_id, self.project_name))
+
+    @on(Button.Pressed, "#rebuild_btn")
+    def action_rebuild_pdf(self) -> None:
+        project_dir = Path("projects") / self.project_name
+        content_dir = project_dir / "content"
+        if not content_dir.exists() or not any(content_dir.iterdir()):
+            self.app.notify("No cached content found. Please download first.", severity="error")
+            return
+
+        self._backup_pdf(self.project_name)
+        self.app.push_screen(CrawlerProgressScreen(self.project_id, self.project_name, rebuild_only=True))
 
     @on(Button.Pressed, "#back_btn")
     def action_back(self) -> None:
@@ -375,17 +431,18 @@ class PageSelectionScreen(Screen):
 class CrawlerProgressScreen(Screen):
     """Screen showing the background crawl progress and PDF generation."""
 
-    def __init__(self, project_id: int, project_name: str):
+    def __init__(self, project_id: int, project_name: str, rebuild_only: bool = False):
         super().__init__()
         self.project_id = project_id
         self.project_name = project_name
+        self.rebuild_only = rebuild_only
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield Container(
-            Static(f"Downloading {self.project_name} in background..."),
+            Static(f"{'Rebuilding' if self.rebuild_only else 'Downloading'} {self.project_name}..."),
             Static("Initializing...", id="current_url"),
-            DownloadProgress(id="download_progress"),
+            DownloadProgress(id="discovery_progress" if self.rebuild_only else "download_progress"),
             Static("Preparing...", id="progress_log"),
             id="crawler_container",
         )
@@ -403,28 +460,47 @@ class CrawlerProgressScreen(Screen):
         db = self.app.db  # type: ignore
         project = db.get_project(self.project_id)
         pages = db.get_project_pages(self.project_id)
-        selected_urls = {p.url for p in pages if p.is_selected}
+        selected_pages = [p for p in pages if p.is_selected]
+        selected_urls = {p.url for p in selected_pages}
 
         log = self.query_one("#progress_log", Static)
-        progress = self.query_one("#download_progress", DownloadProgress)
+        progress = self.query_one(
+            "#discovery_progress" if self.rebuild_only else "#download_progress", DownloadProgress
+        )
         current_url_label = self.query_one("#current_url", Static)
-        log.update("Starting crawler...")
 
-        def on_progress(url: str, status: str):
-            progress.update_status(url, status)
-            if status == "downloading":
-                current_url_label.update(f"Fetching: [bold]{url}[/bold]")
+        if self.rebuild_only:
+            log.update("Using cached pages. Skipping crawler...")
+            # Quickly mark all selected pages as "done" in the progress bar
+            for url in selected_urls:
+                progress.update_status(url, "done")
+        else:
+            log.update("Starting crawler...")
 
-        exclude_patterns = [p.strip() for p in project.exclude_patterns.split(",")] if project.exclude_patterns else []
-        crawler = Crawler(project.root_url, project.name, exclude_patterns=exclude_patterns)
-        await crawler.run(selected_urls=selected_urls, on_progress=on_progress)
+            def on_progress(url: str, status: str):
+                progress.update_status(url, status)
+                if status == "downloading":
+                    current_url_label.update(f"Fetching: [bold]{url}[/bold]")
 
-        current_url_label.update("Done.")
-        log.update("Crawling complete. Generating PDF...")
+            exclude_patterns = (
+                [p.strip() for p in project.exclude_patterns.split(",")] if project.exclude_patterns else []
+            )
+            crawler = Crawler(project.root_url, project.name, exclude_patterns=exclude_patterns)
+            await crawler.run(selected_urls=selected_urls, on_progress=on_progress)
+            current_url_label.update("Done.")
+
+        log.update("Generating PDF...")
+
+        def update_gen_status(status: str):
+            self.app.call_from_thread(log.update, f"PDF Gen: {status}")
+            self.app.call_from_thread(current_url_label.update, status)
+
         generator = PDFGenerator(project.name, project.root_url)
-        pdf_path = generator.generate([p for p in pages if p.is_selected])
+        # Run synchronous PDF generation in a thread to keep UI responsive
+        pdf_path = await asyncio.to_thread(generator.generate, selected_pages, None, update_gen_status)
 
         log.update(f"Success! PDF generated at: {pdf_path}")
+        current_url_label.update("[bold green]All tasks complete.[/bold green]")
         self.query_one("#stop_btn", Button).label = "Close"
 
     @on(Button.Pressed, "#stop_btn")
@@ -462,6 +538,11 @@ class Docs2PDFApp(App):
         height: auto;
         min-height: 3;
         margin-top: 1;
+        align: center middle;
+        width: 100%;
+    }
+    .button-row {
+        height: auto;
         align: center middle;
         width: 100%;
     }
@@ -509,6 +590,12 @@ class Docs2PDFApp(App):
     /* Pastel Yellow: Reset */
     #reset_btn {
         background: #FDFFB6;
+        color: #2C3333;
+    }
+
+    /* Pastel Peach: Rebuild */
+    #rebuild_btn {
+        background: #FFD1A1;
         color: #2C3333;
     }
     """

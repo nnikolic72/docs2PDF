@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
 from urllib.parse import urljoin, urlparse
@@ -349,8 +350,15 @@ class PDFGenerator:
                 break
         return crumbs
 
-    def generate(self, selected_pages: list[Page], output_filename: str | None = None):
+    def generate(
+        self,
+        selected_pages: list[Page],
+        output_filename: str | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+    ):
         """Merge selected pages and generate the final PDF."""
+        if progress_callback:
+            progress_callback("Preparing content...")
         if output_filename is None:
             # Use project name or fallback to documentation.pdf
             safe_name = self.project_dir.name.replace(" ", "_").lower()
@@ -360,7 +368,10 @@ class PDFGenerator:
         pages_by_id = {p.id: p for p in selected_pages if p.id is not None}
 
         render_data = []
-        for page in selected_pages:
+        total_pages = len(selected_pages)
+        for i, page in enumerate(selected_pages):
+            if progress_callback:
+                progress_callback(f"Processing page {i + 1}/{total_pages}: {page.title}")
             # Read saved content from Phase 3
             filename = urlparse(page.url).path.strip("/").replace("/", "_") or "index"
             filepath = self.content_dir / f"{filename}.html"
@@ -379,17 +390,22 @@ class PDFGenerator:
                     "anchor": self._slugify_url(page.url),
                     "breadcrumbs": self._get_breadcrumbs(page, pages_by_id),
                     "content": rewritten_content,
+                    "level": len(self._get_breadcrumbs(page, pages_by_id)),
                 }
             )
 
         # Render template
+        if progress_callback:
+            progress_callback("Rendering HTML...")
         template = self.env.get_template("base.html")
-        full_html = template.render(pages=render_data)
+        full_html = template.render(pages=render_data, project_name=self.project_name)
 
         # Save HTML for debugging if needed
         (self.project_dir / "debug.html").write_text(full_html, encoding="utf-8")
 
         # Generate PDF
+        if progress_callback:
+            progress_callback("Generating PDF (this may take a while for large files)...")
         output_path = self.project_dir / output_filename
         base_url = Path.cwd().as_uri() + "/"
         HTML(string=full_html, base_url=base_url).write_pdf(output_path)
