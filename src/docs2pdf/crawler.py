@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 import trafilatura
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
 
@@ -206,16 +206,60 @@ class Crawler:
         # Post-process to fix trafilatura converting all code to <pre>
         soup = BeautifulSoup(content, "html.parser")
 
+        # Extract only the body content to avoid nested <html>/<body> tags
+        body = soup.find("body")
+        if body and isinstance(body, Tag):
+            # Create a new soup from the body contents
+            # This ensures we don't have nested <html>/<body> tags in the PDF
+            content_soup = BeautifulSoup("".join([str(c) for c in body.contents]), "html.parser")
+
+            # Remove the first <h1> if it exists, as the template adds its own
+            h1 = content_soup.find("h1")
+            if h1 and isinstance(h1, Tag):
+                h1.decompose()
+
+            # Remove mini-TOCs (ul/ol where all lis are just internal links)
+            for list_tag in content_soup.find_all(["ul", "ol"]):
+                if not isinstance(list_tag, Tag):
+                    continue
+                is_mini_toc = True
+                lis = list_tag.find_all("li", recursive=False)
+                if not lis:
+                    continue
+
+                for li in lis:
+                    if not isinstance(li, Tag):
+                        is_mini_toc = False
+                        break
+                    a_tag = li.find("a")
+                    # Must be an internal link and li text must match a_tag text
+                    if (
+                        not a_tag
+                        or not isinstance(a_tag, Tag)
+                        or not a_tag.get("href", "").startswith("#")
+                        or len(li.get_text(strip=True)) != len(a_tag.get_text(strip=True))
+                    ):
+                        is_mini_toc = False
+                        break
+
+                if is_mini_toc:
+                    list_tag.decompose()
+
+            soup = content_soup
+
         # 1. pre inside p should be code (inline)
         for p in soup.find_all("p"):
-            for pre in p.find_all("pre"):
-                pre.name = "code"
+            if isinstance(p, Tag):
+                for pre in p.find_all("pre"):
+                    if isinstance(pre, Tag):
+                        pre.name = "code"
 
         # 2. pre inside pre should be pre > code (block)
         for pre in soup.find_all("pre"):
-            inner_pre = pre.find("pre")
-            if inner_pre:
-                inner_pre.name = "code"
+            if isinstance(pre, Tag):
+                inner_pre = pre.find("pre")
+                if inner_pre and isinstance(inner_pre, Tag):
+                    inner_pre.name = "code"
 
         return str(soup)
 

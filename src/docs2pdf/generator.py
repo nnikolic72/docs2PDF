@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from docs2pdf.database import Page
 
@@ -54,7 +54,9 @@ class PDFGenerator:
         # Setup Jinja2
         template_dir = Path(__file__).parent / "templates"
         template_dir.mkdir(exist_ok=True)
-        self.env = Environment(loader=FileSystemLoader(str(template_dir)))
+        self.env = Environment(
+            loader=FileSystemLoader(str(template_dir)), autoescape=select_autoescape(["html", "xml"])
+        )
         self._ensure_default_template()
 
     def _ensure_default_template(self):
@@ -104,49 +106,120 @@ class PDFGenerator:
             font-weight: bold;
             font-style: normal;
         }
-        @font-face {
-            font-family: 'JetBrains Mono';
-            src: url('fonts/jetbrains-mono/JetbrainsMonoItalic-lg91X.ttf') format('truetype');
-            font-weight: normal;
-            font-style: italic;
-        }
 
         @page {
             size: 1620px 2160px; /* reMarkable Paper Pro aspect ratio */
-            margin: 60px;
+            margin: 80px;
         }
+
+        @page :first {
+            margin: 0;
+        }
+
         body {
             font-family: 'Bookerly', serif;
             font-size: 30px;
-            line-height: 1.5;
+            line-height: 1.6;
             color: #111;
-        }
-        pre {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 25px;
-            background-color: #f5f5f5;
-            padding: 20px;
-            border-radius: 12px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            margin: 25px 0;
-        }
-        code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85em;
-            background-color: #f0f0f0;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        pre code {
-            font-size: 1em;
-            background-color: transparent;
+            margin: 0;
             padding: 0;
-            border-radius: 0;
         }
+
+        /* Cover Page */
+        .cover-page {
+            width: 1620px;
+            height: 2160px;
+            page-break-after: always;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            background-color: #333;
+            {% if cover_image %}
+            background-image: url('{{ cover_image }}');
+            background-size: cover;
+            background-position: center;
+            {% endif %}
+        }
+
+        .cover-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 1;
+        }
+
+        .cover-content {
+            position: relative;
+            z-index: 2;
+            padding: 100px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+            max-width: 80%;
+        }
+
+        .cover-title {
+            font-size: 100px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            line-height: 1.1;
+        }
+
+        .cover-subtitle {
+            font-size: 50px;
+            font-weight: normal;
+            opacity: 0.9;
+        }
+
+        /* TOC */
+        .toc-page {
+            page-break-before: always;
+            page-break-after: always;
+        }
+
+        .toc-title {
+            font-size: 60px;
+            margin-bottom: 60px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+        }
+
+        .toc-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .toc-item {
+            margin-bottom: 15px;
+        }
+
+        .toc-item a {
+            text-decoration: none;
+            color: #111;
+            display: block;
+        }
+
+        .toc-item a::after {
+            content: leader(dotted) " " target-counter(attr(href), page);
+        }
+
+        .toc-level-0 { font-weight: bold; font-size: 34px; margin-top: 30px; }
+        .toc-level-1 { margin-left: 40px; font-size: 30px; }
+        .toc-level-2 { margin-left: 80px; font-size: 28px; color: #444; }
+        .toc-level-3 { margin-left: 120px; font-size: 26px; color: #666; }
+
+        /* General Content */
         .section {
             page-break-before: always;
         }
+
         .breadcrumbs {
             font-size: 20px;
             color: #666;
@@ -154,33 +227,69 @@ class PDFGenerator:
             border-bottom: 1px solid #eee;
             padding-bottom: 5px;
         }
+
         .breadcrumbs a {
             color: #666;
             text-decoration: none;
         }
+
+        h1 { font-size: 52px; margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        h2 { font-size: 44px; margin-top: 50px; }
+        h3 { font-size: 36px; margin-top: 40px; }
+
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            background-color: #f8f8f8;
+            padding: 25px;
+            border-radius: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 30px 0;
+            border: 1px solid #eee;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            background-color: #f0f0f0;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
         img {
             max-width: 100%;
             height: auto;
             display: block;
-            margin: 20px auto;
+            margin: 40px auto;
+            border-radius: 8px;
         }
-        h1 { font-size: 52px; margin-top: 0; }
-        h2 { font-size: 44px; }
-        h3 { font-size: 36px; }
-        a { color: #004a99; }
+
+        a { color: #004a99; text-decoration: none; }
+        p { margin: 25px 0; }
+        li { margin: 10px 0; }
     </style>
 </head>
 <body>
-    <div class="section" id="table-of-contents">
-        <h1>Table of Contents</h1>
-        <ul>
+    <div class="cover-page">
+        <div class="cover-overlay"></div>
+        <div class="cover-content">
+            <div class="cover-title">{{ project_name }}</div>
+            <div class="cover-subtitle">Documentation</div>
+        </div>
+    </div>
+
+    <div class="toc-page" id="toc">
+        <div class="toc-title">Table of Contents</div>
+        <ul class="toc-list">
             {% for page in pages %}
-                {% if not page.breadcrumbs %}
-                <li><a href="#{{ page.anchor }}">{{ page.title }}</a></li>
-                {% endif %}
+                <li class="toc-item toc-level-{{ page.level }}">
+                    <a href="#{{ page.anchor }}" class="toc-link">{{ page.title }}</a>
+                </li>
             {% endfor %}
         </ul>
     </div>
+
     {% for page in pages %}
     <div class="section" id="{{ page.anchor }}">
         <div class="breadcrumbs">
