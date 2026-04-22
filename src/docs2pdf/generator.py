@@ -124,6 +124,14 @@ class PDFGenerator:
             color: #111;
             margin: 0;
             padding: 0;
+            text-rendering: optimizeLegibility;
+            font-kerning: normal;
+            font-variant-ligatures: common-ligatures;
+        }
+
+        strong, b {
+            font-weight: bold;
+            margin: 0 0.05em;
         }
 
         /* Cover Page */
